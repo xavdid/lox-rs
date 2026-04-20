@@ -121,7 +121,7 @@ impl Scanner<'_> {
         }
     }
 
-    fn scan_tokens(&mut self) {
+    fn scan_tokens(mut self) -> Result<Tokens, Vec<ScannerError>> {
         while let Some(&c) = self.chars.peek() {
             println!("tokenizing: {c}");
             match c {
@@ -135,9 +135,7 @@ impl Scanner<'_> {
                 '+' => self.add_token(TokenType::Plus),
                 ';' => self.add_token(TokenType::Semicolon),
                 '*' => self.add_token(TokenType::Star),
-                '!' => {
-                    self.add_token_if_eq(&'=', TokenType::BangEqual, TokenType::Bang);
-                }
+                '!' => self.add_token_if_eq(&'=', TokenType::BangEqual, TokenType::Bang),
                 _ => {
                     self.errors
                         .push(ScannerError::UnexpectedCharacter { c, line: self.line });
@@ -150,23 +148,21 @@ impl Scanner<'_> {
             type_: TokenType::Eof,
             line: self.line,
         });
+
+        if self.errors.is_empty() {
+            Ok(Tokens {
+                tokens: self.tokens,
+            })
+        } else {
+            Err(self.errors)
+        }
     }
 }
 
 pub fn tokenize(source: &Source) -> Result<Tokens, Vec<ScannerError>> {
     println!("Tokenizing!");
 
-    let mut scanner = Scanner::new(source);
-
-    scanner.scan_tokens();
-
-    if scanner.errors.is_empty() {
-        Ok(Tokens {
-            tokens: scanner.tokens,
-        })
-    } else {
-        Err(scanner.errors)
-    }
+    Scanner::new(source).scan_tokens()
 }
 
 #[cfg(test)]
