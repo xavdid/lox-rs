@@ -112,12 +112,7 @@ impl Scanner<'_> {
         });
     }
 
-    fn add_token_conditionally(
-        &mut self,
-        if_next_is: &char,
-        then: TokenType,
-        otherwise: TokenType,
-    ) {
+    fn add_token_if_eq(&mut self, if_next_is: &char, then: TokenType, otherwise: TokenType) {
         self.chars.next();
         if self.chars.peek() == Some(if_next_is) {
             self.add_token(then);
@@ -141,7 +136,7 @@ impl Scanner<'_> {
                 ';' => self.add_token(TokenType::Semicolon),
                 '*' => self.add_token(TokenType::Star),
                 '!' => {
-                    self.add_token_conditionally(&'=', TokenType::BangEqual, TokenType::Bang);
+                    self.add_token_if_eq(&'=', TokenType::BangEqual, TokenType::Bang);
                 }
                 _ => {
                     self.errors
