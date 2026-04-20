@@ -1,9 +1,10 @@
 use crate::reader::Source;
 
-pub type Tokens = ();
+pub struct Tokens {}
 
 pub fn tokenize(source: Source) -> Tokens {
     println!("Tokenizing!");
+    Tokens {}
 }
 
 #[cfg(test)]
@@ -12,6 +13,6 @@ mod tests {
 
     #[test]
     fn it_works() {
-        tokenize(());
+        tokenize(Source {});
     }
 }

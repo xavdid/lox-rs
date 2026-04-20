@@ -1,9 +1,10 @@
 use crate::tokenize::Tokens;
 
-pub type Ast = ();
+pub struct Ast {}
 
 pub fn parse(tokens: Tokens) -> Ast {
     println!("Parsing!");
+    Ast {}
 }
 
 #[cfg(test)]
@@ -12,6 +13,6 @@ mod tests {
 
     #[test]
     fn it_works() {
-        parse(());
+        parse(Tokens {});
     }
 }

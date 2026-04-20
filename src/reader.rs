@@ -1,7 +1,8 @@
-pub type Source = ();
+pub struct Source {}
 
-pub fn read_source() -> Source {
+pub fn read_source(soruce: &str) -> Source {
     println!("Reading source!");
+    Source {}
 }
 
 #[cfg(test)]
@@ -10,6 +11,6 @@ mod tests {
 
     #[test]
     fn it_works() {
-        read_source();
+        read_source("");
     }
 }

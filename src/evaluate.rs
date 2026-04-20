@@ -10,6 +10,6 @@ mod tests {
 
     #[test]
     fn it_works() {
-        evaluate(());
+        evaluate(Ast {});
     }
 }
