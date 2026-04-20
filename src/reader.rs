@@ -1,8 +1,15 @@
-pub struct Source {}
+use std::{fs::read_to_string, io};
 
-pub fn read_source(_soruce: &str) -> Source {
+pub struct Source {
+    pub text: String,
+}
+
+pub fn read_source(path: &str) -> Result<Source, io::Error> {
     println!("Reading source!");
-    Source {}
+
+    let text = read_to_string(path)?;
+
+    Ok(Source { text })
 }
 
 #[cfg(test)]
@@ -11,6 +18,7 @@ mod tests {
 
     #[test]
     fn it_works() {
-        read_source("");
+        // file in project root, which is where the tests are run from
+        read_source("Cargo.toml").unwrap();
     }
 }

@@ -2,7 +2,7 @@ use crate::reader::Source;
 
 pub struct Tokens {}
 
-pub fn tokenize(_source: Source) -> Tokens {
+pub fn tokenize(_source: &Source) -> Tokens {
     println!("Tokenizing!");
     Tokens {}
 }
@@ -13,6 +13,8 @@ mod tests {
 
     #[test]
     fn it_works() {
-        tokenize(Source {});
+        tokenize(&Source {
+            text: String::new(),
+        });
     }
 }

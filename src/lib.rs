@@ -3,7 +3,12 @@ use std::{
     process::exit,
 };
 
-use crate::{evaluate::evaluate, parser::parse, reader::read_source, tokenize::tokenize};
+use crate::{
+    evaluate::evaluate,
+    parser::parse,
+    reader::{Source, read_source},
+    tokenize::tokenize,
+};
 
 pub mod config;
 mod evaluate;
@@ -11,12 +16,22 @@ mod parser;
 mod reader;
 mod tokenize;
 
-#[derive(Debug, PartialEq)]
-pub enum LoxError {}
+#[derive(Debug)]
+pub enum LoxError {
+    ReaderError(io::Error),
+}
 
-pub fn run_file(_file_path: &str) -> Result<(), LoxError> {
+impl From<io::Error> for LoxError {
+    fn from(value: io::Error) -> Self {
+        LoxError::ReaderError(value)
+    }
+}
+
+pub fn run_file(file_path: &str) -> Result<(), LoxError> {
     // TODO: read file
-    run("file contents")
+    let source = read_source(file_path)?;
+    println!("{}", source.text);
+    run(&source)
 }
 
 // never returns; run until quit
@@ -39,15 +54,17 @@ pub fn run_repl() -> ! {
         }
 
         // TODO: handle errors
-        run(input).expect("no errors");
+        run(&Source {
+            text: input.to_string(),
+        })
+        .expect("no errors");
     }
 }
 
 // TODO: this should probably return something? for testability?
-pub fn run(input: &str) -> Result<(), LoxError> {
+pub fn run(input: &Source) -> Result<(), LoxError> {
     // this is the core of the interpreter
-    let source = read_source(input);
-    let tokens = tokenize(source);
+    let tokens = tokenize(input);
     let ast = parse(tokens);
     evaluate(ast);
 
