@@ -18,6 +18,7 @@ sync message:
   cp -r src cargo.toml cargo.lock {{ COURSE_DIR }}
   git -C {{ COURSE_DIR }} add .
   git -C {{ COURSE_DIR }} commit -m "{{ message }}"
+  git -C {{ COURSE_DIR }} push
 
 sync-all message: && (sync message)
   gg "{{ message }}"
