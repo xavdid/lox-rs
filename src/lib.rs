@@ -1,79 +1,54 @@
+use std::io::{self, Write};
+
+use crate::{
+    config::{Config, ConfigError},
+    evaluate::evaluate,
+    parser::parse,
+    reader::read_source,
+    tokenize::tokenize,
+};
+
+pub mod config;
+mod evaluate;
+mod parser;
+mod reader;
+mod tokenize;
+
 #[derive(Debug, PartialEq)]
 pub enum LoxError {
-    InvalidArgs,
+    Config(ConfigError),
 }
 
-#[derive(Debug, PartialEq)]
-pub enum RunMode {
-    Repl,
-    Source(String),
+pub fn run_file(config: &Config) -> Result<(), LoxError> {
+    // TODO: read file
+    run("file contents")
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Config {
-    mode: RunMode,
-}
+// never returns; run until quit
+pub fn run_repl() -> ! {
+    // TODO: add environment
+    loop {
+        print!("lox.rs >>> ");
+        io::stdout().flush().expect("flush to work");
+        let mut buffer = String::new();
+        let stdin = io::stdin(); // We get `Stdin` here.
+        stdin
+            .read_line(&mut buffer)
+            .expect("reading from stdin to work");
 
-impl Config {
-    /** Takes env:args and builds a config out of them. Fails if a filepath isn't given */
-    pub fn build(mut args: impl Iterator<Item = String>) -> Result<Config, LoxError> {
-        // get rid of program name
-        args.next();
-
-        // valid to call with 0 or 1 args
-        let config = match args.next() {
-            Some(arg) => Config {
-                mode: RunMode::Source(arg),
-            },
-            None => Config {
-                mode: RunMode::Repl,
-            },
-        };
-
-        // but invalid with 2+
-        match args.next() {
-            Some(_) => Err(LoxError::InvalidArgs),
-            None => Ok(config),
-        }
+        let input = buffer.trim();
+        // TODO: handle errors
+        run(input).expect("no errors");
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// TODO: this should probably return something? for testability?
+pub fn run(input: &str) -> Result<(), LoxError> {
+    // this is the core of the interpreter
+    let source = read_source(input);
+    let tokens = tokenize(source);
+    let ast = parse(tokens);
+    evaluate(ast);
 
-    #[test]
-    fn repl_mode_works() {
-        assert_eq!(
-            Config::build(vec!["my-program".to_string()].into_iter()),
-            Ok(Config {
-                mode: RunMode::Repl
-            })
-        );
-    }
-
-    #[test]
-    fn source_mode_works() {
-        assert_eq!(
-            Config::build(vec!["my-program".to_string(), "a/b/c".to_string()].into_iter()),
-            Ok(Config {
-                mode: RunMode::Source("a/b/c".to_string())
-            })
-        );
-    }
-
-    #[test]
-    fn it_fails_with_extra_args() {
-        assert_eq!(
-            Config::build(
-                vec![
-                    "my-program".to_string(),
-                    "a/b/c".to_string(),
-                    "--whatever".to_string()
-                ]
-                .into_iter()
-            ),
-            Err(LoxError::InvalidArgs)
-        );
-    }
+    Ok(())
 }
