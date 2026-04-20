@@ -7,23 +7,30 @@ use crate::{
     evaluate::evaluate,
     parser::parse,
     reader::{Source, read_source},
-    tokenize::tokenize,
+    scanner::{ScannerError, tokenize},
 };
 
 pub mod config;
 mod evaluate;
 mod parser;
 mod reader;
-mod tokenize;
+mod scanner;
 
 #[derive(Debug)]
 pub enum LoxError {
-    ReaderError(io::Error),
+    Reader(io::Error),
+    Scanner(String),
 }
 
 impl From<io::Error> for LoxError {
     fn from(value: io::Error) -> Self {
-        LoxError::ReaderError(value)
+        LoxError::Reader(value)
+    }
+}
+
+impl From<Vec<ScannerError>> for LoxError {
+    fn from(value: Vec<ScannerError>) -> Self {
+        LoxError::Scanner(value.iter().map(|e| format!("Scanner: {e}\n")).collect())
     }
 }
 
@@ -64,7 +71,7 @@ pub fn run_repl() -> ! {
 // TODO: this should probably return something? for testability?
 pub fn run(input: &Source) -> Result<(), LoxError> {
     // this is the core of the interpreter
-    let tokens = tokenize(input);
+    let tokens = tokenize(input)?;
     let ast = parse(tokens);
     evaluate(ast);
 

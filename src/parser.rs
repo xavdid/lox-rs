@@ -1,4 +1,4 @@
-use crate::tokenize::Tokens;
+use crate::scanner::Tokens;
 
 pub struct Ast {}
 
@@ -13,6 +13,6 @@ mod tests {
 
     #[test]
     fn it_works() {
-        parse(Tokens {});
+        parse(Tokens { tokens: vec![] });
     }
 }
