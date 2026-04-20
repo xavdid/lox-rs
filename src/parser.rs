@@ -2,7 +2,7 @@ use crate::tokenize::Tokens;
 
 pub struct Ast {}
 
-pub fn parse(tokens: Tokens) -> Ast {
+pub fn parse(_tokens: Tokens) -> Ast {
     println!("Parsing!");
     Ast {}
 }

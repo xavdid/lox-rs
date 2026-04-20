@@ -1,6 +1,6 @@
 use crate::parser::Ast;
 
-pub fn evaluate(ast: Ast) {
+pub fn evaluate(_ast: Ast) {
     println!("Evaluating!");
 }
 

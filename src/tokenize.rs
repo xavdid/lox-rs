@@ -2,7 +2,7 @@ use crate::reader::Source;
 
 pub struct Tokens {}
 
-pub fn tokenize(source: Source) -> Tokens {
+pub fn tokenize(_source: Source) -> Tokens {
     println!("Tokenizing!");
     Tokens {}
 }

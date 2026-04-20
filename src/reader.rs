@@ -1,6 +1,6 @@
 pub struct Source {}
 
-pub fn read_source(soruce: &str) -> Source {
+pub fn read_source(_soruce: &str) -> Source {
     println!("Reading source!");
     Source {}
 }

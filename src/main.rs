@@ -9,14 +9,14 @@ fn main() {
     let config = match Config::build(args()) {
         Ok(config) => config,
         Err(err) => {
-            eprintln!("{err:?}");
+            eprintln!("\nERR: {err:?}");
             exit(64);
         }
     };
 
     match config.mode {
         RunMode::Repl => run_repl(),
-        RunMode::Source(_) => match run_file(&config) {
+        RunMode::Source(path) => match run_file(&path) {
             Ok(_) => {}
             Err(e) => {
                 eprintln!("{e:?}");

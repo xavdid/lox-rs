@@ -1,12 +1,9 @@
-use std::io::{self, Write};
-
-use crate::{
-    config::{Config, ConfigError},
-    evaluate::evaluate,
-    parser::parse,
-    reader::read_source,
-    tokenize::tokenize,
+use std::{
+    io::{self, Write},
+    process::exit,
 };
+
+use crate::{evaluate::evaluate, parser::parse, reader::read_source, tokenize::tokenize};
 
 pub mod config;
 mod evaluate;
@@ -15,11 +12,9 @@ mod reader;
 mod tokenize;
 
 #[derive(Debug, PartialEq)]
-pub enum LoxError {
-    Config(ConfigError),
-}
+pub enum LoxError {}
 
-pub fn run_file(config: &Config) -> Result<(), LoxError> {
+pub fn run_file(_file_path: &str) -> Result<(), LoxError> {
     // TODO: read file
     run("file contents")
 }
@@ -37,6 +32,12 @@ pub fn run_repl() -> ! {
             .expect("reading from stdin to work");
 
         let input = buffer.trim();
+
+        if input.is_empty() {
+            println!("\nExiting!");
+            exit(0);
+        }
+
         // TODO: handle errors
         run(input).expect("no errors");
     }
