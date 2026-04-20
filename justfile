@@ -9,6 +9,9 @@ run:
 run-release:
   cargo run --release --quiet
 
+lint *args:
+  cargo clippy --all-targets {{ args }}
+
 COURSE_DIR:= "/Users/david/projects/crusty/lox-rs"
 
 sync message:
@@ -16,3 +19,5 @@ sync message:
   git -C {{ COURSE_DIR }} add .
   git -C {{ COURSE_DIR }} commit -m "{{ message }}"
 
+sync-all message: && (sync message)
+  gg "{{ message }}"

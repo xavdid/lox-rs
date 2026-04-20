@@ -6,8 +6,8 @@ mod reader;
 mod tokenize;
 
 fn main() {
-    read_source();
-    tokenize();
-    parse();
-    evaluate();
+    let source = read_source();
+    let tokens = tokenize(source);
+    let ast = parse(tokens);
+    evaluate(ast);
 }
