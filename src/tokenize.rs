@@ -5,3 +5,13 @@ pub type Tokens = ();
 pub fn tokenize(source: Source) -> Tokens {
     println!("Tokenizing!");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        tokenize(());
+    }
+}

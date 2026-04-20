@@ -22,3 +22,6 @@ sync message:
 
 sync-all message: && (sync message)
   gg "{{ message }}"
+
+alias s := sync
+alias sa := sync-all
