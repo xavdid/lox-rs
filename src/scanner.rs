@@ -88,79 +88,90 @@ impl Display for ScannerError {
     }
 }
 
-// pub struct Scanner {
-//     chars:
-//     tokens: Vec<Token>,
-//     line: u32,
-// }
+pub struct Scanner<'a> {
+    chars: std::iter::Peekable<std::str::Chars<'a>>,
+    tokens: Vec<Token>,
+    errors: Vec<ScannerError>,
+    line: u32,
+}
 
-// impl Scanner {
-//     fn new() -> Scanner {
-//         Scanner {
-//             tokens: vec![],
-//             line: 1,
-//         }
-//     }
-// }
+impl Scanner<'_> {
+    fn new(source: &Source) -> Scanner<'_> {
+        Scanner {
+            chars: source.text.chars().peekable(),
+            tokens: vec![],
+            errors: vec![],
+            line: 1,
+        }
+    }
+
+    fn add_token(&mut self, type_: TokenType) {
+        self.tokens.push(Token {
+            type_,
+            line: self.line,
+        });
+    }
+
+    fn add_token_conditionally(
+        &mut self,
+        if_next_is: &char,
+        then: TokenType,
+        otherwise: TokenType,
+    ) {
+        self.chars.next();
+        if self.chars.peek() == Some(if_next_is) {
+            self.add_token(then);
+        } else {
+            self.add_token(otherwise);
+        }
+    }
+
+    fn scan_tokens(&mut self) {
+        while let Some(&c) = self.chars.peek() {
+            println!("tokenizing: {c}");
+            match c {
+                '(' => self.add_token(TokenType::LeftParen),
+                ')' => self.add_token(TokenType::RightParen),
+                '{' => self.add_token(TokenType::LeftBrace),
+                '}' => self.add_token(TokenType::RightBrace),
+                ',' => self.add_token(TokenType::Comma),
+                '.' => self.add_token(TokenType::Dot),
+                '-' => self.add_token(TokenType::Minus),
+                '+' => self.add_token(TokenType::Plus),
+                ';' => self.add_token(TokenType::Semicolon),
+                '*' => self.add_token(TokenType::Star),
+                '!' => {
+                    self.add_token_conditionally(&'=', TokenType::BangEqual, TokenType::Bang);
+                }
+                _ => {
+                    self.errors
+                        .push(ScannerError::UnexpectedCharacter { c, line: self.line });
+                }
+            }
+            self.chars.next();
+        }
+
+        self.tokens.push(Token {
+            type_: TokenType::Eof,
+            line: self.line,
+        });
+    }
+}
 
 pub fn tokenize(source: &Source) -> Result<Tokens, Vec<ScannerError>> {
     println!("Tokenizing!");
 
-    let mut tokens = vec![];
-    let mut errors = vec![];
+    let mut scanner = Scanner::new(source);
 
-    // let mut start = 0;
-    // let mut current = 0;
-    let mut line = 1;
+    scanner.scan_tokens();
 
-    // let source_len = source.text.len();
-    let mut chars = source.text.chars().peekable();
-
-    let mut add_token = |type_: TokenType| {
-        tokens.push(Token { type_, line });
-    };
-    let mut add_conditionally = |if_next_is: &char, then: TokenType, otherwise: TokenType| {
-        chars.next();
-        if chars.peek() == Some(if_next_is) {
-            add_token(then);
-        } else {
-            add_token(otherwise);
-        }
-    };
-
-    while let Some(&c) = chars.peek() {
-        println!("tokenizing: {c}");
-        match c {
-            '(' => add_token(TokenType::LeftParen),
-            ')' => add_token(TokenType::RightParen),
-            '{' => add_token(TokenType::LeftBrace),
-            '}' => add_token(TokenType::RightBrace),
-            ',' => add_token(TokenType::Comma),
-            '.' => add_token(TokenType::Dot),
-            '-' => add_token(TokenType::Minus),
-            '+' => add_token(TokenType::Plus),
-            ';' => add_token(TokenType::Semicolon),
-            '*' => add_token(TokenType::Star),
-            '!' => {
-                chars.next();
-                add_conditionally(&'=', TokenType::BangEqual, TokenType::Bang);
-            }
-            _ => {
-                errors.push(ScannerError::UnexpectedCharacter { c, line });
-            }
-        }
-        chars.next();
+    if scanner.errors.is_empty() {
+        Ok(Tokens {
+            tokens: scanner.tokens,
+        })
+    } else {
+        Err(scanner.errors)
     }
-
-    if !errors.is_empty() {
-        return Err(errors);
-    }
-
-    tokens.push(Token {
-        type_: TokenType::Eof,
-        line,
-    });
-    Ok(Tokens { tokens })
 }
 
 #[cfg(test)]
@@ -220,12 +231,16 @@ mod tests {
     fn multi_character_tokens() {
         assert_eq!(
             tokenize(&Source {
-                text: "!=".to_string(),
+                text: "!=!".to_string(),
             }),
             Ok(Tokens {
                 tokens: vec![
                     Token {
                         type_: TokenType::BangEqual,
+                        line: 1
+                    },
+                    Token {
+                        type_: TokenType::Bang,
                         line: 1
                     },
                     Token {
