@@ -2,11 +2,12 @@ use std::{fmt::Display, vec};
 
 use crate::reader::Source;
 
+#[derive(Debug, PartialEq)]
 pub struct Tokens {
     pub tokens: Vec<Token>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -57,6 +58,8 @@ pub enum TokenType {
 
     Eof,
 }
+
+#[derive(Debug, PartialEq)]
 pub struct Token {
     pub type_: TokenType,
     // pub value: String, // i'm going rogue
@@ -69,8 +72,10 @@ impl Display for Token {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum ScannerError {
     UnexpectedCharacter { c: char, line: u32 },
+    // InvalidOperator { s: String, line: u32 },
 }
 
 impl Display for ScannerError {
@@ -82,6 +87,21 @@ impl Display for ScannerError {
         }
     }
 }
+
+// pub struct Scanner {
+//     chars:
+//     tokens: Vec<Token>,
+//     line: u32,
+// }
+
+// impl Scanner {
+//     fn new() -> Scanner {
+//         Scanner {
+//             tokens: vec![],
+//             line: 1,
+//         }
+//     }
+// }
 
 pub fn tokenize(source: &Source) -> Result<Tokens, Vec<ScannerError>> {
     println!("Tokenizing!");
@@ -99,6 +119,14 @@ pub fn tokenize(source: &Source) -> Result<Tokens, Vec<ScannerError>> {
     let mut add_token = |type_: TokenType| {
         tokens.push(Token { type_, line });
     };
+    let mut add_conditionally = |if_next_is: &char, then: TokenType, otherwise: TokenType| {
+        chars.next();
+        if chars.peek() == Some(if_next_is) {
+            add_token(then);
+        } else {
+            add_token(otherwise);
+        }
+    };
 
     while let Some(&c) = chars.peek() {
         println!("tokenizing: {c}");
@@ -113,6 +141,10 @@ pub fn tokenize(source: &Source) -> Result<Tokens, Vec<ScannerError>> {
             '+' => add_token(TokenType::Plus),
             ';' => add_token(TokenType::Semicolon),
             '*' => add_token(TokenType::Star),
+            '!' => {
+                chars.next();
+                add_conditionally(&'=', TokenType::BangEqual, TokenType::Bang);
+            }
             _ => {
                 errors.push(ScannerError::UnexpectedCharacter { c, line });
             }
@@ -137,8 +169,71 @@ mod tests {
 
     #[test]
     fn it_works() {
-        tokenize(&Source {
-            text: String::new(),
-        });
+        assert_eq!(
+            tokenize(&Source {
+                text: ";(){}*;;".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        type_: TokenType::Semicolon,
+                        line: 1
+                    },
+                    Token {
+                        type_: TokenType::LeftParen,
+                        line: 1
+                    },
+                    Token {
+                        type_: TokenType::RightParen,
+                        line: 1
+                    },
+                    Token {
+                        type_: TokenType::LeftBrace,
+                        line: 1
+                    },
+                    Token {
+                        type_: TokenType::RightBrace,
+                        line: 1
+                    },
+                    Token {
+                        type_: TokenType::Star,
+                        line: 1
+                    },
+                    Token {
+                        type_: TokenType::Semicolon,
+                        line: 1
+                    },
+                    Token {
+                        type_: TokenType::Semicolon,
+                        line: 1
+                    },
+                    Token {
+                        type_: TokenType::Eof,
+                        line: 1
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn multi_character_tokens() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "!=".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        type_: TokenType::BangEqual,
+                        line: 1
+                    },
+                    Token {
+                        type_: TokenType::Eof,
+                        line: 1
+                    },
+                ]
+            })
+        );
     }
 }
