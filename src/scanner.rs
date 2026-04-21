@@ -109,27 +109,6 @@ impl Scanner<'_> {
         }
     }
 
-    fn add_token(&mut self, value: TokenType) {
-        self.tokens.push(Token {
-            value,
-            line: self.line,
-        });
-    }
-
-    fn add_compound_token(&mut self, if_next_is: &char, then: TokenType, otherwise: TokenType) {
-        if self.chars.peek() == Some(if_next_is) {
-            self.add_token(then);
-            self.chars.next();
-        } else {
-            self.add_token(otherwise);
-        }
-    }
-
-    /** consume `chars` until you reach a non-digit character */
-    fn take_digits(&mut self) -> String {
-        iter::from_fn(|| self.chars.next_if(|nc| nc.is_ascii_digit())).collect()
-    }
-
     fn scan_tokens(mut self) -> Result<Tokens, Vec<ScannerError>> {
         while let Some(c) = self.chars.next() {
             println!("tokenizing: {c}");
@@ -167,6 +146,8 @@ impl Scanner<'_> {
                     }
                 }
                 '"' => {
+                    // > a string literal!
+
                     // a string literal! consume until we end or hit another quote
                     // multi-line strings are supported
                     let val: String =
@@ -189,7 +170,7 @@ impl Scanner<'_> {
                     };
                 }
                 _ if c.is_ascii_digit() => {
-                    // an int or float!
+                    // > an int or float!
 
                     // this is the first or only part of the number
                     // special handling for `c` because we've already consumed it to get here
@@ -197,7 +178,7 @@ impl Scanner<'_> {
                     let val = format!("{c}{}", self.take_digits());
 
                     match self.chars.peek() {
-                        // a float!
+                        // a float! or a method call, which this doesn't handle well
                         Some('.') => {
                             self.chars.next(); // consume the `.`
                             let second_half = self.take_digits();
@@ -208,6 +189,37 @@ impl Scanner<'_> {
                             self.add_token(TokenType::Number(val));
                         }
                     };
+                }
+                _ if c.is_ascii_alphabetic() || c == '_' => {
+                    // > a keyword or idenitifier!
+
+                    let val = format!(
+                        "{c}{}",
+                        iter::from_fn(|| self
+                            .chars
+                            .next_if(|nc| nc.is_ascii_alphabetic() || *nc == '_'))
+                        .collect::<String>()
+                    );
+
+                    match val.as_str() {
+                        "and" => self.add_token(TokenType::And),
+                        "class" => self.add_token(TokenType::Class),
+                        "else" => self.add_token(TokenType::Else),
+                        "false" => self.add_token(TokenType::False),
+                        "for" => self.add_token(TokenType::For),
+                        "fun" => self.add_token(TokenType::Fun),
+                        "if" => self.add_token(TokenType::If),
+                        "nil" => self.add_token(TokenType::Nil),
+                        "or" => self.add_token(TokenType::Or),
+                        "print" => self.add_token(TokenType::Print),
+                        "return" => self.add_token(TokenType::Return),
+                        "super" => self.add_token(TokenType::Super),
+                        "this" => self.add_token(TokenType::This),
+                        "true" => self.add_token(TokenType::True),
+                        "var" => self.add_token(TokenType::Var),
+                        "while" => self.add_token(TokenType::While),
+                        _ => self.add_token(TokenType::Identifier(val)),
+                    }
                 }
                 ' ' | '\r' | '\t' => {}
                 '\n' => self.line += 1,
@@ -230,6 +242,28 @@ impl Scanner<'_> {
         } else {
             Err(self.errors)
         }
+    }
+
+    fn add_token(&mut self, value: TokenType) {
+        self.tokens.push(Token {
+            value,
+            line: self.line,
+        });
+    }
+
+    /** Adds one of two tokens if the next character is a specific value. Only consumes a character if there's a match */
+    fn add_compound_token(&mut self, if_next_is: &char, then: TokenType, otherwise: TokenType) {
+        if self.chars.peek() == Some(if_next_is) {
+            self.add_token(then);
+            self.chars.next();
+        } else {
+            self.add_token(otherwise);
+        }
+    }
+
+    /** Consume `chars` until you reach a non-digit character and return the resulting String */
+    fn take_digits(&mut self) -> String {
+        iter::from_fn(|| self.chars.next_if(|nc| nc.is_ascii_digit())).collect()
     }
 }
 
@@ -644,7 +678,30 @@ mod tests {
             })
         );
     }
+
+    #[test]
     fn float_at_end_of_input() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "123.456".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Number("123.456".to_string()),
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 1
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn keywords() {
         assert_eq!(
             tokenize(&Source {
                 text: "123.456".to_string(),
