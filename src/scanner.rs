@@ -1,4 +1,4 @@
-use std::{fmt::Display, vec};
+use std::{fmt::Display, iter, vec};
 
 use crate::reader::Source;
 
@@ -63,7 +63,7 @@ pub enum TokenType {
 pub struct Token {
     pub value: TokenType,
     // pub value: String, // i'm going rogue
-    pub line: u32,
+    pub line: usize,
 }
 
 impl Display for Token {
@@ -74,7 +74,8 @@ impl Display for Token {
 
 #[derive(Debug, PartialEq)]
 pub enum ScannerError {
-    UnexpectedCharacter { c: char, line: u32 },
+    UnexpectedCharacter { c: char, line: usize },
+    UnterminatedString { line: usize },
     // InvalidOperator { s: String, line: u32 },
 }
 
@@ -84,6 +85,9 @@ impl Display for ScannerError {
             ScannerError::UnexpectedCharacter { c, line } => {
                 write!(f, "Unexpected character \"{c}\" on line {line}")
             }
+            ScannerError::UnterminatedString { line } => {
+                write!(f, "Unterminated string starting on line {line}")
+            }
         }
     }
 }
@@ -92,7 +96,7 @@ pub struct Scanner<'a> {
     chars: std::iter::Peekable<std::str::Chars<'a>>,
     tokens: Vec<Token>,
     errors: Vec<ScannerError>,
-    line: u32,
+    line: usize,
 }
 
 impl Scanner<'_> {
@@ -157,6 +161,30 @@ impl Scanner<'_> {
                         self.add_token(TokenType::Slash);
                     }
                 }
+                '"' => {
+                    // a string literal! consume until we end or hit another quote
+                    // multi-line strings are supported
+                    let val: String =
+                        iter::from_fn(|| self.chars.next_if(|nc| *nc != '"')).collect();
+                    // `next_if` doesn't consume the last character, so we need to manually advance past the closing quote, if present
+
+                    match self.chars.next() {
+                        // correctly terminated string!
+                        Some('"') => {
+                            // we advanced as many lines as there are newlines in the string
+                            self.line += val.chars().filter(|c| *c == '\n').count();
+                            self.add_token(TokenType::String(val));
+                        }
+                        Some(_) => panic!(
+                            "ended a string on neither a doublequote or the end of the stream??"
+                        ),
+                        None => self
+                            .errors
+                            .push(ScannerError::UnterminatedString { line: self.line }),
+                    };
+                }
+                ' ' | '\r' | '\t' => {}
+                '\n' => self.line += 1,
                 _ => {
                     self.errors
                         .push(ScannerError::UnexpectedCharacter { c, line: self.line });
@@ -262,7 +290,7 @@ mod tests {
     fn multi_character_tokens() {
         assert_eq!(
             tokenize(&Source {
-                text: "!=!;===<<>=><=!!!".to_string(),
+                text: "!=!;== =<<>=> <=!!!".to_string(),
             }),
             Ok(Tokens {
                 tokens: vec![
@@ -390,6 +418,147 @@ mod tests {
                     },
                 ]
             })
+        );
+    }
+
+    #[test]
+    fn ignored_whitespace() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "!  =  +  - \n! . * \t\t ; \n /".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Equal,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Plus,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Minus,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Bang,
+                        line: 2
+                    },
+                    Token {
+                        value: TokenType::Dot,
+                        line: 2
+                    },
+                    Token {
+                        value: TokenType::Star,
+                        line: 2
+                    },
+                    Token {
+                        value: TokenType::Semicolon,
+                        line: 2
+                    },
+                    Token {
+                        value: TokenType::Slash,
+                        line: 3
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 3
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn basic_string() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "!!\"neat\";".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::String("neat".to_string()),
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Semicolon,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 1
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn multiline_string() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "!\"ne\na\nt\";\n;".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::String("ne\na\nt".to_string()),
+                        // strings are attributed to the line on which they end?
+                        line: 3
+                    },
+                    Token {
+                        value: TokenType::Semicolon,
+                        line: 3
+                    },
+                    Token {
+                        value: TokenType::Semicolon,
+                        line: 4
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 4
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn unterminated_string() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "\"neat".to_string(),
+            }),
+            Err(vec![ScannerError::UnterminatedString { line: 1 }])
+        );
+    }
+
+    #[test]
+    fn unrecognized_character() {
+        assert_eq!(
+            tokenize(&Source {
+                // @ is never used
+                text: "!+@".to_string(),
+            }),
+            Err(vec![ScannerError::UnexpectedCharacter { c: '@', line: 1 }])
         );
     }
 }
