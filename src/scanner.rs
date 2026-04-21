@@ -59,16 +59,62 @@ pub enum TokenType {
     Eof,
 }
 
+impl TokenType {
+    fn width(&self) -> usize {
+        match self {
+            TokenType::LeftParen => todo!(),
+            TokenType::RightParen => todo!(),
+            TokenType::LeftBrace => todo!(),
+            TokenType::RightBrace => todo!(),
+            TokenType::Comma => todo!(),
+            TokenType::Dot => todo!(),
+            TokenType::Minus => todo!(),
+            TokenType::Plus => todo!(),
+            TokenType::Semicolon => todo!(),
+            TokenType::Slash => todo!(),
+            TokenType::Star => todo!(),
+            TokenType::Bang => todo!(),
+            TokenType::BangEqual => todo!(),
+            TokenType::Equal => todo!(),
+            TokenType::EqualEqual => todo!(),
+            TokenType::Greater => todo!(),
+            TokenType::GreaterEqual => todo!(),
+            TokenType::Less => todo!(),
+            TokenType::LessEqual => todo!(),
+            TokenType::Identifier(_) => todo!(),
+            TokenType::String(_) => todo!(),
+            TokenType::Number(_) => todo!(),
+            TokenType::And => todo!(),
+            TokenType::Class => todo!(),
+            TokenType::Else => todo!(),
+            TokenType::False => todo!(),
+            TokenType::Fun => todo!(),
+            TokenType::For => todo!(),
+            TokenType::If => todo!(),
+            TokenType::Nil => todo!(),
+            TokenType::Or => todo!(),
+            TokenType::Print => todo!(),
+            TokenType::Return => todo!(),
+            TokenType::Super => todo!(),
+            TokenType::This => todo!(),
+            TokenType::True => todo!(),
+            TokenType::Var => todo!(),
+            TokenType::While => todo!(),
+            TokenType::Eof => todo!(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Token {
-    pub type_: TokenType,
+    pub value: TokenType,
     // pub value: String, // i'm going rogue
     pub line: u32,
 }
 
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} @ {}", self.type_, self.line)
+        write!(f, "{:?} @ {}", self.value, self.line)
     }
 }
 
@@ -105,24 +151,24 @@ impl Scanner<'_> {
         }
     }
 
-    fn add_token(&mut self, type_: TokenType) {
+    fn add_token(&mut self, value: TokenType) {
         self.tokens.push(Token {
-            type_,
+            value,
             line: self.line,
         });
     }
 
-    fn add_token_if_eq(&mut self, if_next_is: &char, then: TokenType, otherwise: TokenType) {
-        self.chars.next();
+    fn add_compound_token(&mut self, if_next_is: &char, then: TokenType, otherwise: TokenType) {
         if self.chars.peek() == Some(if_next_is) {
             self.add_token(then);
+            self.chars.next();
         } else {
             self.add_token(otherwise);
         }
     }
 
     fn scan_tokens(mut self) -> Result<Tokens, Vec<ScannerError>> {
-        while let Some(&c) = self.chars.peek() {
+        while let Some(c) = self.chars.next() {
             println!("tokenizing: {c}");
             match c {
                 '(' => self.add_token(TokenType::LeftParen),
@@ -135,17 +181,17 @@ impl Scanner<'_> {
                 '+' => self.add_token(TokenType::Plus),
                 ';' => self.add_token(TokenType::Semicolon),
                 '*' => self.add_token(TokenType::Star),
-                '!' => self.add_token_if_eq(&'=', TokenType::BangEqual, TokenType::Bang),
+                '!' => self.add_compound_token(&'=', TokenType::BangEqual, TokenType::Bang),
+                '=' => self.add_compound_token(&'=', TokenType::EqualEqual, TokenType::Equal),
                 _ => {
                     self.errors
                         .push(ScannerError::UnexpectedCharacter { c, line: self.line });
                 }
             }
-            self.chars.next();
         }
 
         self.tokens.push(Token {
-            type_: TokenType::Eof,
+            value: TokenType::Eof,
             line: self.line,
         });
 
@@ -178,39 +224,39 @@ mod tests {
             Ok(Tokens {
                 tokens: vec![
                     Token {
-                        type_: TokenType::Semicolon,
+                        value: TokenType::Semicolon,
                         line: 1
                     },
                     Token {
-                        type_: TokenType::LeftParen,
+                        value: TokenType::LeftParen,
                         line: 1
                     },
                     Token {
-                        type_: TokenType::RightParen,
+                        value: TokenType::RightParen,
                         line: 1
                     },
                     Token {
-                        type_: TokenType::LeftBrace,
+                        value: TokenType::LeftBrace,
                         line: 1
                     },
                     Token {
-                        type_: TokenType::RightBrace,
+                        value: TokenType::RightBrace,
                         line: 1
                     },
                     Token {
-                        type_: TokenType::Star,
+                        value: TokenType::Star,
                         line: 1
                     },
                     Token {
-                        type_: TokenType::Semicolon,
+                        value: TokenType::Semicolon,
                         line: 1
                     },
                     Token {
-                        type_: TokenType::Semicolon,
+                        value: TokenType::Semicolon,
                         line: 1
                     },
                     Token {
-                        type_: TokenType::Eof,
+                        value: TokenType::Eof,
                         line: 1
                     },
                 ]
@@ -222,20 +268,32 @@ mod tests {
     fn multi_character_tokens() {
         assert_eq!(
             tokenize(&Source {
-                text: "!=!".to_string(),
+                text: "!=!;===".to_string(),
             }),
             Ok(Tokens {
                 tokens: vec![
                     Token {
-                        type_: TokenType::BangEqual,
+                        value: TokenType::BangEqual,
                         line: 1
                     },
                     Token {
-                        type_: TokenType::Bang,
+                        value: TokenType::Bang,
                         line: 1
                     },
                     Token {
-                        type_: TokenType::Eof,
+                        value: TokenType::Semicolon,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::EqualEqual,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Equal,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Eof,
                         line: 1
                     },
                 ]
