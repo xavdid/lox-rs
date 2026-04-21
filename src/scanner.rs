@@ -149,63 +149,12 @@ impl Scanner<'_> {
                         self.add_token(TokenType::Slash);
                     }
                 }
-                '"' => {
-                    // > a string literal!
-
-                    // consume until we end or hit another quote
-                    // multi-line strings are supported
-                    let val: String =
-                        iter::from_fn(|| self.chars.next_if(|nc| *nc != '"')).collect();
-
-                    // `next_if` doesn't consume the last character, so we need to manually advance past the closing quote, if present
-                    match self.chars.next() {
-                        // correctly terminated string!
-                        Some('"') => {
-                            // we advanced as many lines as there are newlines in the string
-                            self.line += val.chars().filter(|c| *c == '\n').count();
-                            self.add_token(TokenType::String(val));
-                        }
-                        Some(_) => panic!(
-                            "ended a string on neither a doublequote or the end of the stream??"
-                        ),
-                        None => self
-                            .errors
-                            .push(ScannerError::UnterminatedString { line: self.line }),
-                    };
-                }
-                _ if c.is_ascii_digit() => {
-                    // > an int or float!
-
-                    // this is the first or only part of the number
-                    // special handling for `c` because we've already consumed it to get here
-                    // so we have to make sure to include it in the result
-                    let mut val = self.take_digits(c);
-
-                    match self.chars.peek() {
-                        // a float! or a method call, which this doesn't handle well
-                        Some('.') => {
-                            let separator = self.chars.next().unwrap(); // consume the `.`
-                            val.push_str(&self.take_digits(separator)); // but include it in the result
-                            if val.ends_with('.') {
-                                self.errors.push(ScannerError::MissingDecimals {
-                                    val,
-                                    line: self.line,
-                                });
-                            } else {
-                                self.add_token(TokenType::Number(val));
-                            }
-                        }
-                        // the end of the number (or the source itself)
-                        _ => {
-                            self.add_token(TokenType::Number(val));
-                        }
-                    };
-                }
+                '"' => self.add_string(),
+                _ if c.is_ascii_digit() => self.add_number(c),
                 _ if is_ident(c) => {
                     // > a keyword or idenitifier!
 
                     let val = self.take_ident(c);
-
                     match val.as_str() {
                         "and" => self.add_token(TokenType::And),
                         "class" => self.add_token(TokenType::Class),
@@ -280,6 +229,57 @@ impl Scanner<'_> {
         let mut res = String::from(starting_with);
         res.extend(iter::from_fn(|| self.chars.next_if(|c| is_ident(*c))));
         res
+    }
+
+    /** add a number token, consuming what it needs */
+    fn add_number(&mut self, c: char) {
+        // this is the first or only part of the number
+        // special handling for `c` because we've already consumed it to get here
+        // so we have to make sure to include it in the result
+        let mut val = self.take_digits(c);
+
+        match self.chars.peek() {
+            // a float! or a method call, which this doesn't handle well
+            Some('.') => {
+                let separator = self.chars.next().unwrap(); // consume the `.`
+                val.push_str(&self.take_digits(separator)); // but include it in the result
+                if val.ends_with('.') {
+                    self.errors.push(ScannerError::MissingDecimals {
+                        val,
+                        line: self.line,
+                    });
+                } else {
+                    self.add_token(TokenType::Number(val));
+                }
+            }
+            // the end of the number (or the source itself)
+            _ => {
+                self.add_token(TokenType::Number(val));
+            }
+        };
+    }
+
+    /** add a string token, consuming what it needs */
+    fn add_string(&mut self) {
+        // consume until we end or hit another quote
+        // multi-line strings are supported
+        let val: String = iter::from_fn(|| self.chars.next_if(|nc| *nc != '"')).collect();
+
+        // `next_if` doesn't consume the last character, so we need to manually advance past the closing quote, if present
+        match self.chars.next() {
+            // correctly terminated string!
+            Some('"') => {
+                // we advanced as many lines as there are newlines in the string
+                self.line += val.chars().filter(|c| *c == '\n').count();
+                self.add_token(TokenType::String(val));
+            }
+            Some(_) => panic!(
+                "ended a string on neither a doublequote or the end of the stream?? Shouldn't happen"
+            ),
+            None => self
+                .errors
+                .push(ScannerError::UnterminatedString { line: self.line }),
+        };
     }
 }
 
