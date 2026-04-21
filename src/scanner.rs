@@ -76,6 +76,7 @@ impl Display for Token {
 pub enum ScannerError {
     UnexpectedCharacter { c: char, line: usize },
     UnterminatedString { line: usize },
+    MissingDecimals { val: String, line: usize },
     // InvalidOperator { s: String, line: usize },
 }
 
@@ -83,10 +84,13 @@ impl Display for ScannerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ScannerError::UnexpectedCharacter { c, line } => {
-                write!(f, "Unexpected character \"{c}\" on line {line}")
+                write!(f, "[line: {line}] Unexpected character \"{c}\".")
             }
             ScannerError::UnterminatedString { line } => {
-                write!(f, "Unterminated string starting on line {line}")
+                write!(f, "[line: {line}] Unterminated string started.")
+            }
+            ScannerError::MissingDecimals { val, line } => {
+                write!(f, "[line: {line}] Got float with no decimals: '{val}'")
             }
         }
     }
@@ -148,12 +152,12 @@ impl Scanner<'_> {
                 '"' => {
                     // > a string literal!
 
-                    // a string literal! consume until we end or hit another quote
+                    // consume until we end or hit another quote
                     // multi-line strings are supported
                     let val: String =
                         iter::from_fn(|| self.chars.next_if(|nc| *nc != '"')).collect();
-                    // `next_if` doesn't consume the last character, so we need to manually advance past the closing quote, if present
 
+                    // `next_if` doesn't consume the last character, so we need to manually advance past the closing quote, if present
                     match self.chars.next() {
                         // correctly terminated string!
                         Some('"') => {
@@ -175,14 +179,21 @@ impl Scanner<'_> {
                     // this is the first or only part of the number
                     // special handling for `c` because we've already consumed it to get here
                     // so we have to make sure to include it in the result
-                    let val = format!("{c}{}", self.take_digits());
+                    let mut val = self.take_digits(c);
 
                     match self.chars.peek() {
                         // a float! or a method call, which this doesn't handle well
                         Some('.') => {
-                            self.chars.next(); // consume the `.`
-                            let second_half = self.take_digits();
-                            self.add_token(TokenType::Number(format!("{val}.{second_half}")));
+                            let separator = self.chars.next().unwrap(); // consume the `.`
+                            val.push_str(&self.take_digits(separator)); // but include it in the result
+                            if val.ends_with('.') {
+                                self.errors.push(ScannerError::MissingDecimals {
+                                    val,
+                                    line: self.line,
+                                });
+                            } else {
+                                self.add_token(TokenType::Number(val));
+                            }
                         }
                         // the end of the number (or the source itself)
                         _ => {
@@ -190,16 +201,10 @@ impl Scanner<'_> {
                         }
                     };
                 }
-                _ if c.is_ascii_alphabetic() || c == '_' => {
+                _ if is_ident(c) => {
                     // > a keyword or idenitifier!
 
-                    let val = format!(
-                        "{c}{}",
-                        iter::from_fn(|| self
-                            .chars
-                            .next_if(|nc| nc.is_ascii_alphabetic() || *nc == '_'))
-                        .collect::<String>()
-                    );
+                    let val = self.take_ident(c);
 
                     match val.as_str() {
                         "and" => self.add_token(TokenType::And),
@@ -262,9 +267,24 @@ impl Scanner<'_> {
     }
 
     /** Consume `chars` until you reach a non-digit character and return the resulting String */
-    fn take_digits(&mut self) -> String {
-        iter::from_fn(|| self.chars.next_if(|nc| nc.is_ascii_digit())).collect()
+    fn take_digits(&mut self, starting_with: char) -> String {
+        let mut res = String::from(starting_with);
+        res.extend(iter::from_fn(|| {
+            self.chars.next_if(|nc| nc.is_ascii_digit())
+        }));
+        res
     }
+
+    /** Consume `chars` until you reach a non-ident character and return the resulting String */
+    fn take_ident(&mut self, starting_with: char) -> String {
+        let mut res = String::from(starting_with);
+        res.extend(iter::from_fn(|| self.chars.next_if(|c| is_ident(*c))));
+        res
+    }
+}
+
+fn is_ident(c: char) -> bool {
+    c.is_ascii_alphabetic() || c == '_'
 }
 
 pub fn tokenize(source: &Source) -> Result<Tokens, Vec<ScannerError>> {
@@ -602,6 +622,31 @@ mod tests {
     }
 
     #[test]
+    fn multiline_int_not_a_thing() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "123\n456".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Number("123".to_string()),
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Number("456".to_string()),
+                        line: 2
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 2
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
     fn integers() {
         assert_eq!(
             tokenize(&Source {
@@ -697,6 +742,45 @@ mod tests {
                     },
                 ]
             })
+        );
+    }
+
+    #[test]
+    fn num_leading_period() {
+        // this is a weird one- I think i'm diverging from the book
+        assert_eq!(
+            tokenize(&Source {
+                text: ".456".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Dot,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Number("456".to_string()),
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 1
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn num_trailing_period() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "123.".to_string(),
+            }),
+            Err(vec![ScannerError::MissingDecimals {
+                val: "123.".to_string(),
+                line: 1
+            }])
         );
     }
 
