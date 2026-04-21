@@ -59,52 +59,6 @@ pub enum TokenType {
     Eof,
 }
 
-impl TokenType {
-    fn width(&self) -> usize {
-        match self {
-            TokenType::LeftParen => todo!(),
-            TokenType::RightParen => todo!(),
-            TokenType::LeftBrace => todo!(),
-            TokenType::RightBrace => todo!(),
-            TokenType::Comma => todo!(),
-            TokenType::Dot => todo!(),
-            TokenType::Minus => todo!(),
-            TokenType::Plus => todo!(),
-            TokenType::Semicolon => todo!(),
-            TokenType::Slash => todo!(),
-            TokenType::Star => todo!(),
-            TokenType::Bang => todo!(),
-            TokenType::BangEqual => todo!(),
-            TokenType::Equal => todo!(),
-            TokenType::EqualEqual => todo!(),
-            TokenType::Greater => todo!(),
-            TokenType::GreaterEqual => todo!(),
-            TokenType::Less => todo!(),
-            TokenType::LessEqual => todo!(),
-            TokenType::Identifier(_) => todo!(),
-            TokenType::String(_) => todo!(),
-            TokenType::Number(_) => todo!(),
-            TokenType::And => todo!(),
-            TokenType::Class => todo!(),
-            TokenType::Else => todo!(),
-            TokenType::False => todo!(),
-            TokenType::Fun => todo!(),
-            TokenType::For => todo!(),
-            TokenType::If => todo!(),
-            TokenType::Nil => todo!(),
-            TokenType::Or => todo!(),
-            TokenType::Print => todo!(),
-            TokenType::Return => todo!(),
-            TokenType::Super => todo!(),
-            TokenType::This => todo!(),
-            TokenType::True => todo!(),
-            TokenType::Var => todo!(),
-            TokenType::While => todo!(),
-            TokenType::Eof => todo!(),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct Token {
     pub value: TokenType,
@@ -185,6 +139,24 @@ impl Scanner<'_> {
                 '=' => self.add_compound_token(&'=', TokenType::EqualEqual, TokenType::Equal),
                 '<' => self.add_compound_token(&'=', TokenType::LessEqual, TokenType::Less),
                 '>' => self.add_compound_token(&'=', TokenType::GreaterEqual, TokenType::Greater),
+                // I don't have the book's `match` (yet)
+                '/' => {
+                    if self.chars.peek() == Some(&'/') {
+                        // consume characters until we reach a newline (or end)
+                        loop {
+                            match self.chars.next() {
+                                Some('\n') => {
+                                    self.line += 1;
+                                    break;
+                                }
+                                Some(_) => {}
+                                None => break,
+                            }
+                        }
+                    } else {
+                        self.add_token(TokenType::Slash);
+                    }
+                }
                 _ => {
                     self.errors
                         .push(ScannerError::UnexpectedCharacter { c, line: self.line });
@@ -340,6 +312,72 @@ mod tests {
                     },
                     Token {
                         value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 1
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn comments_basics() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "!/!// ignored\n/!".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Slash,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Slash,
+                        line: 2
+                    },
+                    Token {
+                        value: TokenType::Bang,
+                        line: 2
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 2
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn comment_no_trailing_newline() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "!/!// ignored".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Slash,
                         line: 1
                     },
                     Token {
