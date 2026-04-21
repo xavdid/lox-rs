@@ -183,6 +183,8 @@ impl Scanner<'_> {
                 '*' => self.add_token(TokenType::Star),
                 '!' => self.add_compound_token(&'=', TokenType::BangEqual, TokenType::Bang),
                 '=' => self.add_compound_token(&'=', TokenType::EqualEqual, TokenType::Equal),
+                '<' => self.add_compound_token(&'=', TokenType::LessEqual, TokenType::Less),
+                '>' => self.add_compound_token(&'=', TokenType::GreaterEqual, TokenType::Greater),
                 _ => {
                     self.errors
                         .push(ScannerError::UnexpectedCharacter { c, line: self.line });
@@ -219,7 +221,7 @@ mod tests {
     fn it_works() {
         assert_eq!(
             tokenize(&Source {
-                text: ";(){}*;;".to_string(),
+                text: ";(){}*;;+*-.,".to_string(),
             }),
             Ok(Tokens {
                 tokens: vec![
@@ -256,6 +258,26 @@ mod tests {
                         line: 1
                     },
                     Token {
+                        value: TokenType::Plus,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Star,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Minus,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Dot,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Comma,
+                        line: 1
+                    },
+                    Token {
                         value: TokenType::Eof,
                         line: 1
                     },
@@ -268,7 +290,7 @@ mod tests {
     fn multi_character_tokens() {
         assert_eq!(
             tokenize(&Source {
-                text: "!=!;===".to_string(),
+                text: "!=!;===<<>=><=!!!".to_string(),
             }),
             Ok(Tokens {
                 tokens: vec![
@@ -290,6 +312,38 @@ mod tests {
                     },
                     Token {
                         value: TokenType::Equal,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Less,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Less,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::GreaterEqual,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Greater,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::LessEqual,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Bang,
                         line: 1
                     },
                     Token {
