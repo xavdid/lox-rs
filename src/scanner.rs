@@ -588,6 +588,39 @@ mod tests {
     }
 
     #[test]
+    fn unicode_string() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "!!\"jalapeño\";".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::String("jalapeño".to_string()),
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Semicolon,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 1
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
     fn multiline_string() {
         assert_eq!(
             tokenize(&Source {
