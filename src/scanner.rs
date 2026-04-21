@@ -76,7 +76,7 @@ impl Display for Token {
 pub enum ScannerError {
     UnexpectedCharacter { c: char, line: usize },
     UnterminatedString { line: usize },
-    // InvalidOperator { s: String, line: u32 },
+    // InvalidOperator { s: String, line: usize },
 }
 
 impl Display for ScannerError {
@@ -123,6 +123,11 @@ impl Scanner<'_> {
         } else {
             self.add_token(otherwise);
         }
+    }
+
+    /** consume `chars` until you reach a non-digit character */
+    fn take_digits(&mut self) -> String {
+        iter::from_fn(|| self.chars.next_if(|nc| nc.is_ascii_digit())).collect()
     }
 
     fn scan_tokens(mut self) -> Result<Tokens, Vec<ScannerError>> {
@@ -181,6 +186,27 @@ impl Scanner<'_> {
                         None => self
                             .errors
                             .push(ScannerError::UnterminatedString { line: self.line }),
+                    };
+                }
+                _ if c.is_ascii_digit() => {
+                    // an int or float!
+
+                    // this is the first or only part of the number
+                    // special handling for `c` because we've already consumed it to get here
+                    // so we have to make sure to include it in the result
+                    let val = format!("{c}{}", self.take_digits());
+
+                    match self.chars.peek() {
+                        // a float!
+                        Some('.') => {
+                            self.chars.next(); // consume the `.`
+                            let second_half = self.take_digits();
+                            self.add_token(TokenType::Number(format!("{val}.{second_half}")));
+                        }
+                        // the end of the number (or the source itself)
+                        _ => {
+                            self.add_token(TokenType::Number(val));
+                        }
                     };
                 }
                 ' ' | '\r' | '\t' => {}
@@ -535,6 +561,103 @@ mod tests {
                     Token {
                         value: TokenType::Eof,
                         line: 4
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn integers() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "!123;".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Number("123".to_string()),
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Semicolon,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 1
+                    },
+                ]
+            })
+        );
+    }
+    #[test]
+    fn floats() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "!123.456;".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Bang,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Number("123.456".to_string()),
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Semicolon,
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 1
+                    },
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn int_at_end_of_input() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "123".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Number("123".to_string()),
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 1
+                    },
+                ]
+            })
+        );
+    }
+    fn float_at_end_of_input() {
+        assert_eq!(
+            tokenize(&Source {
+                text: "123.456".to_string(),
+            }),
+            Ok(Tokens {
+                tokens: vec![
+                    Token {
+                        value: TokenType::Number("123.456".to_string()),
+                        line: 1
+                    },
+                    Token {
+                        value: TokenType::Eof,
+                        line: 1
                     },
                 ]
             })
