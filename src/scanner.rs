@@ -27,10 +27,10 @@ pub enum TokenType {
     BangEqual,
     Equal,
     EqualEqual,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
+    GreaterThan,
+    GreaterThanEqual,
+    LessThan,
+    LessThanEqual,
 
     // Literals.
     // adding a value may be a mistake here, but we'll see!
@@ -130,8 +130,12 @@ impl Scanner<'_> {
                 '*' => self.add_token(TokenType::Star),
                 '!' => self.add_compound_token(&'=', TokenType::BangEqual, TokenType::Bang),
                 '=' => self.add_compound_token(&'=', TokenType::EqualEqual, TokenType::Equal),
-                '<' => self.add_compound_token(&'=', TokenType::LessEqual, TokenType::Less),
-                '>' => self.add_compound_token(&'=', TokenType::GreaterEqual, TokenType::Greater),
+                '<' => self.add_compound_token(&'=', TokenType::LessThanEqual, TokenType::LessThan),
+                '>' => self.add_compound_token(
+                    &'=',
+                    TokenType::GreaterThanEqual,
+                    TokenType::GreaterThan,
+                ),
                 // I don't have the book's `match` (yet)
                 '/' => {
                     if self.chars.peek() == Some(&'/') {
@@ -396,23 +400,23 @@ mod tests {
                         line: 1
                     },
                     Token {
-                        value: TokenType::Less,
+                        value: TokenType::LessThan,
                         line: 1
                     },
                     Token {
-                        value: TokenType::Less,
+                        value: TokenType::LessThan,
                         line: 1
                     },
                     Token {
-                        value: TokenType::GreaterEqual,
+                        value: TokenType::GreaterThanEqual,
                         line: 1
                     },
                     Token {
-                        value: TokenType::Greater,
+                        value: TokenType::GreaterThan,
                         line: 1
                     },
                     Token {
-                        value: TokenType::LessEqual,
+                        value: TokenType::LessThanEqual,
                         line: 1
                     },
                     Token {

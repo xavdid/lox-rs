@@ -63,9 +63,22 @@ impl Parser {
     }
 
     fn parse_binary(&mut self) -> Option<Expr> {
+        let cur = self.current;
         if let Some(left) = self.parse_term() {
             // to be valid binary, the next bit has to be a binary operator
-            if matches!(self.peek().value, TokenType::BangEqual) {
+            if matches!(
+                self.peek().value,
+                TokenType::EqualEqual
+                    | TokenType::BangEqual
+                    | TokenType::LessThan
+                    | TokenType::LessThanEqual
+                    | TokenType::GreaterThan
+                    | TokenType::GreaterThanEqual
+                    | TokenType::Plus
+                    | TokenType::Minus
+                    | TokenType::Star
+                    | TokenType::Slash
+            ) {
                 // TODO: if I used &str in my tokens, I'd be able to copy here
                 // there aren't _that_ many places I'd ned to add need lifetimes
                 let op = self.consume().value.clone().into();
@@ -80,6 +93,8 @@ impl Parser {
             }
         }
 
+        // unroll if we didn't find a binary expression
+        self.current = cur;
         None
     }
 
@@ -117,7 +132,7 @@ impl Parser {
                     op,
                     expr: term.into(),
                 }),
-                None => todo!(),
+                None => todo!("don't think we can hit this?"),
             }
         } else {
             None
@@ -155,11 +170,6 @@ impl Parser {
         }
     }
 
-    // /** probably delete this? */
-    // fn check(&self, token_type: TokenType) -> bool {
-    //     self.peek().value == token_type
-    // }
-
     fn is_at_end(&self) -> bool {
         self.peek().value == TokenType::Eof
     }
@@ -187,8 +197,354 @@ pub fn parse(tokens: Tokens) -> Result<Ast, Vec<ParserError>> {
 
 #[cfg(test)]
 mod tests {
+    use crate::ast::*;
+
     use super::*;
 
     #[test]
-    fn it_works() {}
+    fn it_parses_basic_nil() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Nil,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                root: Expr::Literal(Literal::Nil)
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_basic_bool() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::False,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                root: Expr::Literal(Literal::False)
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_basic_string() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::String("cool".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                root: Expr::Literal(Literal::String("cool".to_string()))
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_basic_int() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Number("123".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                root: Expr::Literal(Literal::Number(123.0))
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_basic_float() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Number("123.456".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                root: Expr::Literal(Literal::Number(123.456))
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_basic_grouping() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::LeftParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::True,
+                line: 1,
+            },
+            Token {
+                value: TokenType::RightParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                root: Expr::Grouping(Expr::Literal(Literal::True).into())
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_basic_unary() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Minus,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                root: Expr::Unary {
+                    op: UnaryOp::Neg,
+                    expr: Expr::Literal(Literal::Number(3.0)).into()
+                }
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_basic_binary() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Number("1".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Slash,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("2".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                root: Expr::Binary {
+                    left: Expr::Literal(Literal::Number(1.0)).into(),
+                    op: BinaryOp::Div,
+                    right: Expr::Literal(Literal::Number(2.0)).into()
+                }
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_nested_binary() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Star,
+                line: 1,
+            },
+            Token {
+                value: TokenType::LeftParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("2".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Slash,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("4".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::RightParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                root: Expr::Binary {
+                    left: Expr::Literal(Literal::Number(3.0)).into(),
+                    op: BinaryOp::Mul,
+                    right: Expr::Grouping(
+                        Expr::Binary {
+                            left: Expr::Literal(Literal::Number(2.0)).into(),
+                            op: BinaryOp::Div,
+                            right: Expr::Literal(Literal::Number(4.0)).into()
+                        }
+                        .into()
+                    )
+                    .into()
+                }
+            })
+        )
+    }
+
+    #[test]
+    fn it_mixes_unary_and_binary() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Minus,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::LessThanEqual,
+                line: 1,
+            },
+            Token {
+                value: TokenType::LeftParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::String("neat".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::EqualEqual,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Bang,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Nil,
+                line: 1,
+            },
+            Token {
+                value: TokenType::RightParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                root: Expr::Binary {
+                    left: Expr::Unary {
+                        op: UnaryOp::Neg,
+                        expr: Expr::Literal(Literal::Number(3.0)).into()
+                    }
+                    .into(),
+                    op: BinaryOp::Lte,
+                    right: Expr::Grouping(
+                        Expr::Binary {
+                            left: Expr::Literal(Literal::String("neat".to_string())).into(),
+                            op: BinaryOp::Eq,
+                            right: Expr::Unary {
+                                op: UnaryOp::Not,
+                                expr: Expr::Literal(Literal::Nil).into()
+                            }
+                            .into()
+                        }
+                        .into()
+                    )
+                    .into()
+                }
+            })
+        )
+    }
+
+    #[test]
+    fn it_fails_for_broken_grouping() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::LeftParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::True,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser
+                .parse()
+                .expect_err("expected an error")
+                // my code returns two errors, since i don't sync well/)
+                .first()
+                .expect("expected an element"),
+            &ParserError::MissingRParen {
+                token: Token {
+                    value: TokenType::Eof,
+                    line: 1
+                }
+            }
+        )
+    }
 }

@@ -79,6 +79,7 @@ pub fn run(input: &Source) -> Result<(), LoxError> {
     // this is the core of the interpreter
     let tokens = tokenize(input)?;
     let ast = parse(tokens);
+    println!("{ast:?}");
     evaluate(ast?);
 
     Ok(())

@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use crate::scanner::TokenType;
 
+#[derive(Debug, PartialEq)]
 pub struct Ast {
     pub root: Expr,
 }
@@ -76,10 +77,10 @@ impl From<TokenType> for BinaryOp {
             TokenType::Slash => BinaryOp::Div,
             TokenType::EqualEqual => BinaryOp::Eq,
             TokenType::BangEqual => BinaryOp::Ne,
-            TokenType::Greater => BinaryOp::Gt,
-            TokenType::GreaterEqual => BinaryOp::Gte,
-            TokenType::Less => BinaryOp::Lt,
-            TokenType::LessEqual => BinaryOp::Lte,
+            TokenType::GreaterThan => BinaryOp::Gt,
+            TokenType::GreaterThanEqual => BinaryOp::Gte,
+            TokenType::LessThan => BinaryOp::Lt,
+            TokenType::LessThanEqual => BinaryOp::Lte,
             _ => panic!("invalid conversion to binaryop from token: {value:?}"),
         }
     }
