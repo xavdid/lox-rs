@@ -1,4 +1,4 @@
-use crate::parser::Ast;
+use crate::ast::Ast;
 
 pub fn evaluate(_ast: Ast) {
     println!("Evaluating!");
@@ -6,10 +6,15 @@ pub fn evaluate(_ast: Ast) {
 
 #[cfg(test)]
 mod tests {
+
+    use crate::ast::Expr;
+
     use super::*;
 
     #[test]
     fn it_works() {
-        evaluate(Ast {});
+        evaluate(Ast {
+            root: Expr::Literal(crate::ast::Literal::Nil),
+        });
     }
 }

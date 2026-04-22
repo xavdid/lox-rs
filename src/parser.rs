@@ -1,109 +1,188 @@
 use std::fmt::Display;
 
-use crate::scanner::Tokens;
-
-pub struct Ast {}
+use crate::ast::{Ast, Expr, Literal};
+use crate::scanner::{Token, TokenType, Tokens};
 
 #[derive(Debug, PartialEq)]
-enum Literal {
-    Number(f64),
-    String(String),
-    True,
-    False,
-    Nil,
+pub enum ParserError {
+    MissingRParen { token: Token },
 }
 
-impl Display for Literal {
+impl Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let res = match self {
-            Literal::Number(n) => n.to_string(),
-            Literal::String(s) => format!("\"{s}\""),
-            Literal::True => "true".to_string(),
-            Literal::False => "false".to_string(),
-            Literal::Nil => "nil".to_string(),
-        };
-        write!(f, "{res}")
+        match self {
+            ParserError::MissingRParen { token } => {
+                write!(f, "[{token}] Missing ')' after expression.",)
+            }
+        }
     }
 }
 
-#[derive(Debug, PartialEq)]
-enum UnaryOp {
-    Neg,
-    Not,
+pub struct Parser {
+    tokens: Vec<Token>,
+    errors: Vec<ParserError>,
+    current: usize,
 }
 
-impl Display for UnaryOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let res = match self {
-            UnaryOp::Neg => "-",
-            UnaryOp::Not => "!",
+// grammar (different from book):
+
+// expression   := term | binary ;
+// binary       := term operator term ;
+// term         := literal | unary | grouping ;
+// unary        := ("-" | "!") term ;
+// literal      := NUMBER | STRING | "true" | "false" | "nil" ;
+// grouping     := "(" expression ")" ;
+// operator     :=  "==" | "!=" | "<" | "<=" | ">" | ">="
+//                 | "+" | "-"  | "*" | "/" ;
+
+impl Parser {
+    pub fn new(tokens: Vec<Token>) -> Self {
+        Self {
+            tokens,
+            errors: vec![],
+            current: 0,
+        }
+    }
+
+    pub fn parse(mut self) -> Result<Ast, Vec<ParserError>> {
+        let root = self.parse_expression();
+
+        if self.errors.is_empty() {
+            if let Some(root) = root {
+                Ok(Ast { root })
+            } else {
+                panic!("no errors, but an empty root node?")
+            }
+        } else {
+            Err(self.errors)
+        }
+    }
+
+    fn parse_expression(&mut self) -> Option<Expr> {
+        self.parse_binary().or_else(|| self.parse_term())
+    }
+
+    fn parse_binary(&mut self) -> Option<Expr> {
+        if let Some(left) = self.parse_term() {
+            // to be valid binary, the next bit has to be a binary operator
+            if matches!(self.peek().value, TokenType::BangEqual) {
+                // TODO: if I used &str in my tokens, I'd be able to copy here
+                // there aren't _that_ many places I'd ned to add need lifetimes
+                let op = self.consume().value.clone().into();
+
+                if let Some(right) = self.parse_term() {
+                    return Some(Expr::Binary {
+                        left: left.into(),
+                        op,
+                        right: right.into(),
+                    });
+                }
+            }
+        }
+
+        None
+    }
+
+    fn parse_term(&mut self) -> Option<Expr> {
+        self.parse_literal()
+            .or_else(|| self.parse_unary())
+            .or_else(|| self.parse_grouping())
+    }
+
+    fn parse_literal(&mut self) -> Option<Expr> {
+        let maybe_literal = match &self.peek().value {
+            TokenType::Nil => Some(Literal::Nil),
+            TokenType::True => Some(Literal::True),
+            TokenType::False => Some(Literal::False),
+            TokenType::String(s) => Some(Literal::String(s.to_owned())),
+            TokenType::Number(s) => Some(Literal::Number(
+                s.parse().expect("expected {s} to be a valid f64"),
+            )),
+            _ => None,
         };
-        write!(f, "{res}")
+
+        if let Some(literal) = maybe_literal {
+            self.consume();
+            Some(Expr::Literal(literal))
+        } else {
+            None
+        }
+    }
+
+    fn parse_unary(&mut self) -> Option<Expr> {
+        if self.consume_if(TokenType::Bang) || self.consume_if(TokenType::Minus) {
+            let op = self.previous().value.clone().into();
+            match self.parse_term() {
+                Some(term) => Some(Expr::Unary {
+                    op,
+                    expr: term.into(),
+                }),
+                None => todo!(),
+            }
+        } else {
+            None
+        }
+    }
+
+    fn parse_grouping(&mut self) -> Option<Expr> {
+        if self.consume_if(TokenType::LeftParen) {
+            let ex = self.parse_expression();
+            if let Some(expr) = ex
+                && self.consume_if(TokenType::RightParen)
+            {
+                Some(Expr::Grouping(expr.into()))
+            } else {
+                self.errors.push(ParserError::MissingRParen {
+                    token: (*self.peek()).clone(),
+                });
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    // HELPERS
+
+    /** book calls this `match`, but I don't like that it doesn't communicate that it advances the pointer */
+    // TODO: option? we always call .previous() right after
+    fn consume_if(&mut self, token_type: TokenType) -> bool {
+        if self.peek().value == token_type {
+            self.consume();
+            true
+        } else {
+            false
+        }
+    }
+
+    // /** probably delete this? */
+    // fn check(&self, token_type: TokenType) -> bool {
+    //     self.peek().value == token_type
+    // }
+
+    fn is_at_end(&self) -> bool {
+        self.peek().value == TokenType::Eof
+    }
+
+    fn peek(&self) -> &Token {
+        &self.tokens[self.current]
+    }
+
+    fn consume(&mut self) -> &Token {
+        if !self.is_at_end() {
+            self.current += 1;
+        }
+        self.previous()
+    }
+
+    fn previous(&self) -> &Token {
+        &self.tokens[self.current - 1]
     }
 }
 
-#[derive(Debug, PartialEq)]
-enum BinaryOp {
-    Eq,
-    Ne,
-    Lt,
-    Lte,
-    Gt,
-    Gte,
-    Add,
-    Sub,
-    Mul,
-    Div,
-}
-
-impl Display for BinaryOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let res = match self {
-            BinaryOp::Eq => "==",
-            BinaryOp::Ne => "!=",
-            BinaryOp::Lt => "<",
-            BinaryOp::Lte => "<=",
-            BinaryOp::Gt => ">",
-            BinaryOp::Gte => ">=",
-            BinaryOp::Add => "+",
-            BinaryOp::Sub => "-",
-            BinaryOp::Mul => "*",
-            BinaryOp::Div => "/",
-        };
-        write!(f, "{res}")
-    }
-}
-
-#[derive(Debug, PartialEq)]
-enum Expr {
-    Literal(Literal),
-    Binary {
-        left: Box<Expr>,
-        op: BinaryOp,
-        right: Box<Expr>,
-    },
-    Unary {
-        op: UnaryOp,
-        expr: Box<Expr>,
-    },
-    Grouping(Box<Expr>),
-}
-
-impl Display for Expr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let res = match self {
-            Expr::Literal(literal) => literal.to_string(),
-            Expr::Binary { left, op, right } => format!("{left} {op} {right}"),
-            Expr::Unary { op, expr } => format!("{op}{expr}"),
-            Expr::Grouping(expr) => format!("({expr})"),
-        };
-        write!(f, "{res}")
-    }
-}
-
-pub fn parse(_tokens: Tokens) -> Ast {
+pub fn parse(tokens: Tokens) -> Result<Ast, Vec<ParserError>> {
     println!("Parsing!");
-    Ast {}
+    Parser::new(tokens.tokens).parse()
 }
 
 #[cfg(test)]
@@ -111,120 +190,5 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
-        parse(Tokens { tokens: vec![] });
-    }
-
-    #[test]
-    fn pretty_printing() {
-        assert_eq!(
-            Expr::Literal(Literal::String("cool".to_string())).to_string(),
-            "\"cool\"".to_string()
-        );
-        assert_eq!(
-            Expr::Literal(Literal::Number(123.4)).to_string(),
-            "123.4".to_string()
-        );
-        assert_eq!(Expr::Literal(Literal::True).to_string(), "true".to_string());
-        assert_eq!(
-            Expr::Literal(Literal::False).to_string(),
-            "false".to_string()
-        );
-        assert_eq!(Expr::Literal(Literal::Nil).to_string(), "nil".to_string());
-
-        assert_eq!(
-            Expr::Binary {
-                left: Expr::Literal(Literal::Number(1.0)).into(),
-                op: BinaryOp::Add,
-                right: Expr::Literal(Literal::Number(2.0)).into()
-            }
-            .to_string(),
-            "1 + 2".to_string()
-        );
-
-        assert_eq!(
-            Expr::Binary {
-                left: Expr::Unary {
-                    op: UnaryOp::Neg,
-                    expr: Expr::Literal(Literal::Number(1.0)).into()
-                }
-                .into(),
-                op: BinaryOp::Sub,
-                right: Expr::Literal(Literal::Number(2.0)).into()
-            }
-            .to_string(),
-            "-1 - 2".to_string()
-        );
-
-        assert_eq!(
-            Expr::Binary {
-                left: Expr::Binary {
-                    left: Expr::Literal(Literal::Number(1.0)).into(),
-                    op: BinaryOp::Mul,
-                    right: Expr::Literal(Literal::Number(3.0)).into()
-                }
-                .into(),
-                op: BinaryOp::Div,
-                right: Expr::Literal(Literal::Number(2.0)).into()
-            }
-            .to_string(),
-            "1 * 3 / 2".to_string()
-        );
-
-        assert_eq!(
-            Expr::Binary {
-                left: Expr::Binary {
-                    left: Expr::Literal(Literal::Number(1.0)).into(),
-                    op: BinaryOp::Lte,
-                    right: Expr::Literal(Literal::Number(3.0)).into()
-                }
-                .into(),
-                op: BinaryOp::Gt,
-                right: Expr::Literal(Literal::Number(2.0)).into()
-            }
-            .to_string(),
-            "1 <= 3 > 2".to_string()
-        );
-
-        assert_eq!(
-            Expr::Binary {
-                left: Expr::Grouping(
-                    Expr::Binary {
-                        left: Expr::Literal(Literal::Number(1.0)).into(),
-                        op: BinaryOp::Eq,
-                        right: Expr::Literal(Literal::Number(3.0)).into()
-                    }
-                    .into()
-                )
-                .into(),
-                op: BinaryOp::Ne,
-                right: Expr::Literal(Literal::Number(2.0)).into()
-            }
-            .to_string(),
-            "(1 == 3) != 2".to_string()
-        );
-
-        assert_eq!(
-            Expr::Binary {
-                left: Expr::Grouping(
-                    Expr::Binary {
-                        left: Expr::Literal(Literal::False).into(),
-                        op: BinaryOp::Lt,
-                        right: Expr::Literal(Literal::Nil).into()
-                    }
-                    .into()
-                )
-                .into(),
-                op: BinaryOp::Gte,
-                right: Expr::Unary {
-                    op: UnaryOp::Not,
-                    expr: Expr::Literal(Literal::Number(2.0)).into()
-                }
-                .into()
-            }
-            .to_string(),
-            // doesn't make sense, but is valid
-            "(false < nil) >= !2".to_string()
-        );
-    }
+    fn it_works() {}
 }

@@ -7,7 +7,7 @@ pub struct Tokens {
     pub tokens: Vec<Token>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -35,6 +35,7 @@ pub enum TokenType {
     // Literals.
     // adding a value may be a mistake here, but we'll see!
     Identifier(String),
+    // don't use the built-in string name
     String(String),
     Number(String),
 
@@ -59,7 +60,7 @@ pub enum TokenType {
     Eof,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub value: TokenType,
     // pub value: String, // i'm going rogue

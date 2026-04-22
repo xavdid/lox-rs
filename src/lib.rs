@@ -5,11 +5,12 @@ use std::{
 
 use crate::{
     evaluate::evaluate,
-    parser::parse,
+    parser::{ParserError, parse},
     reader::{Source, read_source},
     scanner::{ScannerError, tokenize},
 };
 
+mod ast;
 pub mod config;
 mod evaluate;
 mod parser;
@@ -31,6 +32,11 @@ impl From<io::Error> for LoxError {
 impl From<Vec<ScannerError>> for LoxError {
     fn from(value: Vec<ScannerError>) -> Self {
         LoxError::Scanner(value.iter().map(|e| format!("Scanner: {e}\n")).collect())
+    }
+}
+impl From<Vec<ParserError>> for LoxError {
+    fn from(value: Vec<ParserError>) -> Self {
+        LoxError::Scanner(value.iter().map(|e| format!("Parser: {e}\n")).collect())
     }
 }
 
@@ -73,7 +79,7 @@ pub fn run(input: &Source) -> Result<(), LoxError> {
     // this is the core of the interpreter
     let tokens = tokenize(input)?;
     let ast = parse(tokens);
-    evaluate(ast);
+    evaluate(ast?);
 
     Ok(())
 }
