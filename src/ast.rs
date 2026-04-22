@@ -7,7 +7,7 @@ pub struct Ast {
     pub root: Expr,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Literal {
     Number(f64),
     String(String),
@@ -29,7 +29,7 @@ impl Display for Literal {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum UnaryOp {
     Neg,
     Not,
@@ -54,7 +54,7 @@ impl From<TokenType> for UnaryOp {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum BinaryOp {
     Eq,
     Ne,
@@ -104,8 +104,9 @@ impl Display for BinaryOp {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
+    // TODO: store information about where this came from? like line? in the evaluator we just know something is wrong)
     Literal(Literal),
     Binary {
         left: Box<Expr>,

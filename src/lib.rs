@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    evaluate::evaluate,
+    interpreter::evaluate,
     parser::{ParserError, parse},
     reader::{Source, read_source},
     scanner::{ScannerError, tokenize},
@@ -12,7 +12,7 @@ use crate::{
 
 mod ast;
 pub mod config;
-mod evaluate;
+mod interpreter;
 mod parser;
 mod reader;
 mod scanner;
@@ -80,7 +80,7 @@ pub fn run(input: &Source) -> Result<(), LoxError> {
     let tokens = tokenize(input)?;
     let ast = parse(tokens);
     println!("{ast:?}");
-    evaluate(ast?);
+    evaluate(&ast?.root);
 
     Ok(())
 }
