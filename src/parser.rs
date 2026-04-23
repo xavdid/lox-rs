@@ -26,7 +26,7 @@ pub struct Parser {
 
 // grammar (different from book):
 
-// expression   := term | binary ;
+// expression   := binary | term ;
 // binary       := term operator term ;
 // term         := literal | unary | grouping ;
 // unary        := ("-" | "!") term ;
@@ -191,7 +191,6 @@ impl Parser {
 }
 
 pub fn parse(tokens: Tokens) -> Result<Ast, Vec<ParserError>> {
-    println!("Parsing!");
     Parser::new(tokens.tokens).parse()
 }
 
@@ -383,6 +382,41 @@ mod tests {
                     left: Expr::Literal(Literal::Number(1.0)).into(),
                     op: BinaryOp::Div,
                     right: Expr::Literal(Literal::Number(2.0)).into()
+                }
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_nested_unary() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Bang,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Bang,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("2".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                root: Expr::Unary {
+                    op: UnaryOp::Not,
+                    expr: Expr::Unary {
+                        op: UnaryOp::Not,
+                        expr: Expr::Literal(Literal::Number(2.0)).into()
+                    }
+                    .into()
                 }
             })
         )

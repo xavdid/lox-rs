@@ -116,7 +116,6 @@ impl Scanner<'_> {
 
     fn scan_tokens(mut self) -> Result<Tokens, Vec<ScannerError>> {
         while let Some(c) = self.chars.next() {
-            println!("tokenizing: {c}");
             match c {
                 '(' => self.add_token(TokenType::LeftParen),
                 ')' => self.add_token(TokenType::RightParen),
@@ -293,8 +292,6 @@ fn is_ident(c: char) -> bool {
 }
 
 pub fn tokenize(source: &Source) -> Result<Tokens, Vec<ScannerError>> {
-    println!("Tokenizing!");
-
     Scanner::new(source).scan_tokens()
 }
 

@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, mem::discriminant};
 
 use crate::ast::*;
 
@@ -13,20 +13,28 @@ pub enum LoxValue {
 #[derive(Debug, PartialEq)]
 pub enum InterpreterError {
     InvalidUnaryExpr(Expr),
-    InvalidBinaryExpr(Expr, LoxValue, LoxValue),
+    InvalidBinaryExprIncompatibleTypes(Expr),
+    InvalidBinaryExprInvalidTypes(Expr),
 }
 
 impl Display for InterpreterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InterpreterError::InvalidUnaryExpr(expr) => match expr {
-                Expr::Unary { .. } => write!(f, "Invalid unary: {expr}."),
+                Expr::Unary { .. } => write!(f, "ERR: Invalid unary: {expr}."),
                 _ => panic!("Put a non-unary expression in a unary error: {expr}"),
             },
-            InterpreterError::InvalidBinaryExpr(expr, left, right) => match expr {
+            InterpreterError::InvalidBinaryExprIncompatibleTypes(expr) => match expr {
                 Expr::Binary { .. } => write!(
                     f,
-                    "Expected both sides of a binary expression to have the same type. Got: {left:?} and {right:?}.",
+                    "ERR: Expected both sides of a binary expression to have the same type. Got: {expr}.",
+                ),
+                _ => panic!("Put a non-binary expression in a binary error: {expr}"),
+            },
+            InterpreterError::InvalidBinaryExprInvalidTypes(expr) => match expr {
+                Expr::Binary { .. } => write!(
+                    f,
+                    "ERR: Operation not supported for these data types. Got: {expr}.",
                 ),
                 _ => panic!("Put a non-binary expression in a binary error: {expr}"),
             },
@@ -67,14 +75,22 @@ pub fn evaluate(expr: &Expr) -> Result<LoxValue, InterpreterError> {
                 (Number(l), Gte, Number(r)) => Boolean(l >= r),
 
                 // string concat
-                (LString(l), Add, LString(r)) => LString(l.to_string() + r),
+                (LString(l), Add, LString(r)) => LString(l.to_string() + &r),
+
+                // equality requires same type and value
+                (l, Eq, r) => Boolean(l == r),
+                (l, Ne, r) => Boolean(l != r),
 
                 _ => {
-                    return Err(InterpreterError::InvalidBinaryExpr(
-                        expr.clone(),
-                        left.clone(),
-                        right.clone(),
-                    ));
+                    return if discriminant(&left) == discriminant(&right) {
+                        Err(InterpreterError::InvalidBinaryExprInvalidTypes(
+                            expr.clone(),
+                        ))
+                    } else {
+                        Err(InterpreterError::InvalidBinaryExprIncompatibleTypes(
+                            expr.clone(),
+                        ))
+                    };
                 }
             }
         }
@@ -195,10 +211,21 @@ mod tests {
             }),
             Ok(LoxValue::Boolean(true))
         );
+        assert_eq!(
+            evaluate(&Expr::Unary {
+                op: UnaryOp::Not,
+                expr: Expr::Unary {
+                    op: UnaryOp::Not,
+                    expr: Expr::Literal(Literal::Number(2.0)).into()
+                }
+                .into()
+            }),
+            Ok(LoxValue::Boolean(true))
+        );
     }
 
     #[test]
-    fn it_handles_binary_expressions() {
+    fn it_evaluates_binary_expressions() {
         use crate::ast::Literal::*;
         use BinaryOp::*;
         use Expr::*;
@@ -277,6 +304,70 @@ mod tests {
             }),
             Ok(LoxValue::LString("very cool".to_string()))
         );
+        assert_eq!(
+            evaluate(&Expr::Binary {
+                left: Literal(String("very".to_string())).into(),
+                op: Eq,
+                right: Literal(String("cool".to_string())).into()
+            }),
+            Ok(LoxValue::Boolean(false))
+        );
+        assert_eq!(
+            evaluate(&Expr::Binary {
+                left: Literal(String("cool".to_string())).into(),
+                op: Eq,
+                right: Literal(String("cool".to_string())).into()
+            }),
+            Ok(LoxValue::Boolean(true))
+        );
+        assert_eq!(
+            evaluate(&Expr::Binary {
+                left: Literal(Number(123.0)).into(),
+                op: Eq,
+                right: Literal(Number(456.0)).into()
+            }),
+            Ok(LoxValue::Boolean(false))
+        );
+        assert_eq!(
+            evaluate(&Expr::Binary {
+                left: Literal(Number(123.0)).into(),
+                op: Eq,
+                right: Literal(Number(123.0)).into()
+            }),
+            Ok(LoxValue::Boolean(true))
+        );
+        assert_eq!(
+            evaluate(&Expr::Binary {
+                left: Literal(True).into(),
+                op: Eq,
+                right: Literal(False).into()
+            }),
+            Ok(LoxValue::Boolean(false))
+        );
+        assert_eq!(
+            evaluate(&Expr::Binary {
+                left: Literal(True).into(),
+                op: Eq,
+                right: Literal(True).into()
+            }),
+            Ok(LoxValue::Boolean(true))
+        );
+        assert_eq!(
+            evaluate(&Expr::Binary {
+                left: Literal(Nil).into(),
+                op: Eq,
+                right: Literal(False).into()
+            }),
+            Ok(LoxValue::Boolean(false))
+        );
+        assert_eq!(
+            evaluate(&Expr::Binary {
+                left: Literal(Nil).into(),
+                op: Eq,
+                right: Literal(Nil).into()
+            }),
+            Ok(LoxValue::Boolean(true))
+        );
     }
 
     #[test]
@@ -287,7 +378,10 @@ mod tests {
         };
         let err = evaluate(&expr);
         assert_eq!(err, Err(InterpreterError::InvalidUnaryExpr(expr)));
-        assert_eq!(format!("{}", err.unwrap_err()), "Invalid unary: -\"bad\".");
+        assert_eq!(
+            format!("{}", err.unwrap_err()),
+            "ERR: Invalid unary: -\"bad\"."
+        );
 
         let expr = Expr::Unary {
             op: UnaryOp::Neg,
@@ -295,7 +389,10 @@ mod tests {
         };
         let err = evaluate(&expr);
         assert_eq!(err, Err(InterpreterError::InvalidUnaryExpr(expr)));
-        assert_eq!(format!("{}", err.unwrap_err()), "Invalid unary: -false.");
+        assert_eq!(
+            format!("{}", err.unwrap_err()),
+            "ERR: Invalid unary: -false."
+        );
 
         let expr = Expr::Unary {
             op: UnaryOp::Neg,
@@ -303,7 +400,7 @@ mod tests {
         };
         let err = evaluate(&expr);
         assert_eq!(err, Err(InterpreterError::InvalidUnaryExpr(expr)));
-        assert_eq!(format!("{}", err.unwrap_err()), "Invalid unary: -nil.");
+        assert_eq!(format!("{}", err.unwrap_err()), "ERR: Invalid unary: -nil.");
     }
 
     #[test]
@@ -317,15 +414,11 @@ mod tests {
         let err = evaluate(&expr);
         assert_eq!(
             err,
-            Err(InterpreterError::InvalidBinaryExpr(
-                expr,
-                LoxValue::LString("bad".to_string()),
-                LoxValue::Number(123.0)
-            ))
+            Err(InterpreterError::InvalidBinaryExprIncompatibleTypes(expr,))
         );
         assert_eq!(
             format!("{}", err.unwrap_err()),
-            "Expected both sides of a binary expression to have the same type. Got: LString(\"bad\") and Number(123.0)."
+            "ERR: Expected both sides of a binary expression to have the same type. Got: \"bad\" + 123."
         );
 
         // str - str
@@ -337,15 +430,11 @@ mod tests {
         let err = evaluate(&expr);
         assert_eq!(
             err,
-            Err(InterpreterError::InvalidBinaryExpr(
-                expr,
-                LoxValue::LString("bad".to_string()),
-                LoxValue::LString("bad".to_string()),
-            ))
+            Err(InterpreterError::InvalidBinaryExprInvalidTypes(expr,))
         );
         assert_eq!(
             format!("{}", err.unwrap_err()),
-            "Expected both sides of a binary expression to have the same type. Got: LString(\"bad\") and LString(\"bad\")."
+            "ERR: Operation not supported for these data types. Got: \"bad\" - \"bad\"."
         );
     }
 }
