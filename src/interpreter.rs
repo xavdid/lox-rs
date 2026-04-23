@@ -1,4 +1,4 @@
-use std::{fmt::Display, mem::discriminant};
+use std::{collections::HashMap, fmt::Display, mem::discriminant};
 
 use crate::ast::*;
 
@@ -55,6 +55,20 @@ impl Display for InterpreterError {
     }
 }
 
+/** represents a scope */
+pub struct Environment {
+    // values: HashMap<String, LoxValue>, // Rc<RefCell<Hashmap<>>>?
+}
+
+impl Environment {
+    pub fn get(&self, name: &String) -> Option<LoxValue> {
+        todo!("implement getting vars")
+    }
+    pub fn set(&mut self, name: &String, value: &LoxValue) {
+        todo!("implement setting vars")
+    }
+}
+
 pub fn interpret(ast: Ast) -> Result<(), InterpreterError> {
     for stmt in ast.statements {
         execute(&stmt)?
@@ -72,6 +86,7 @@ fn execute(stmt: &Stmt) -> Result<(), InterpreterError> {
             let val = evaluate(expr)?;
             println!("{val}");
         }
+        Stmt::Var { name, val } => todo!(),
     }
 
     Ok(())
@@ -145,6 +160,7 @@ fn evaluate(expr: &Expr) -> Result<LoxValue, InterpreterError> {
             }
         }
         Expr::Grouping(expr) => evaluate(expr)?,
+        Expr::Variable(_) => todo!(),
     })
 }
 

@@ -118,6 +118,7 @@ pub enum Expr {
         expr: Box<Expr>,
     },
     Grouping(Box<Expr>),
+    Variable(String),
 }
 
 impl Display for Expr {
@@ -127,6 +128,7 @@ impl Display for Expr {
             Expr::Binary { left, op, right } => format!("{left} {op} {right}"),
             Expr::Unary { op, expr } => format!("{op}{expr}"),
             Expr::Grouping(expr) => format!("({expr})"),
+            Expr::Variable(_) => todo!(),
         };
         write!(f, "{res}")
     }
@@ -137,6 +139,7 @@ pub enum Stmt {
     // TODO: store information about where this came from? like line? in the evaluator we just know something is wrong)
     Expression(Expr),
     Print(Expr),
+    Var { name: String, val: Option<Expr> },
 }
 
 #[cfg(test)]

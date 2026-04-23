@@ -3,10 +3,12 @@ use std::fmt::Display;
 use crate::ast::{Ast, Expr, Literal, Stmt};
 use crate::scanner::{Token, TokenType, Tokens};
 
+#[allow(clippy::enum_variant_names)] // unless we never get a missing thing?
 #[derive(Debug, PartialEq)]
 pub enum ParserError {
     MissingRParen { token: Token },
     MissingSemiColon { token: Token },
+    MissingVarName { token: Token },
 }
 
 impl Display for ParserError {
@@ -18,6 +20,7 @@ impl Display for ParserError {
             ParserError::MissingSemiColon { token } => {
                 write!(f, "[{token}] Missing ';' after statement.")
             }
+            ParserError::MissingVarName { token } => write!(f, "[{token}] Missing variable name."),
         }
     }
 }
@@ -66,13 +69,44 @@ impl Parser {
     fn parse_statements(&mut self) -> Vec<Stmt> {
         let mut res = vec![];
         while !self.is_at_end() {
-            match self.parse_statement() {
-                Some(s) => res.push(s),
-                None => self.syncronize(),
-            };
+            if let Some(statment) = self.parse_declaration() {
+                res.push(statment);
+            }
         }
         res
     }
+    fn parse_declaration(&mut self) -> Option<Stmt> {
+        let maybe_statement = if self.consume_if(TokenType::Var) {
+            self.parse_var_declaration()
+        } else {
+            self.parse_statement()
+        };
+
+        maybe_statement.or_else(|| {
+            self.syncronize();
+            None
+        })
+    }
+
+    fn parse_var_declaration(&mut self) -> Option<Stmt> {
+        let name = self.consume_identifier()?;
+
+        let val = if self.consume_if(TokenType::Equal) {
+            self.parse_expression()
+        } else {
+            None
+        };
+
+        if self.consume_if(TokenType::Semicolon) {
+            Some(Stmt::Var { name, val })
+        } else {
+            self.errors.push(ParserError::MissingSemiColon {
+                token: (*self.peek()).clone(),
+            });
+            None
+        }
+    }
+
     fn parse_statement(&mut self) -> Option<Stmt> {
         if self.consume_if(TokenType::Print) {
             self.parse_print_statement()
@@ -124,7 +158,7 @@ impl Parser {
             ) {
                 // TODO: if I used &str in my tokens, I'd be able to copy here
                 // there aren't _that_ many places I'd ned to add need lifetimes
-                let op = self.consume().value.clone().into();
+                let op = self.next().value.clone().into();
 
                 if let Some(right) = self.parse_term() {
                     return Some(Expr::Binary {
@@ -142,12 +176,12 @@ impl Parser {
     }
 
     fn parse_term(&mut self) -> Option<Expr> {
-        self.parse_literal()
+        self.parse_primary()
             .or_else(|| self.parse_unary())
             .or_else(|| self.parse_grouping())
     }
 
-    fn parse_literal(&mut self) -> Option<Expr> {
+    fn parse_primary(&mut self) -> Option<Expr> {
         let maybe_literal = match &self.peek().value {
             TokenType::Nil => Some(Literal::Nil),
             TokenType::True => Some(Literal::True),
@@ -160,11 +194,15 @@ impl Parser {
         };
 
         if let Some(literal) = maybe_literal {
-            self.consume();
-            Some(Expr::Literal(literal))
-        } else {
-            None
+            self.next();
+            return Some(Expr::Literal(literal));
         }
+
+        // if let Some(name) = self.consume_identifier() {
+        //     return Some(Expr::Variable(name));
+        // }
+
+        None
     }
 
     fn parse_unary(&mut self) -> Option<Expr> {
@@ -202,14 +240,29 @@ impl Parser {
 
     // HELPERS
 
-    /** book calls this `match`, but I don't like that it doesn't communicate that it advances the pointer */
+    /** book calls this `match`, but I don't like that it doesn't communicate that it advances the pointer. Returns whether it matched and advanced */
     // TODO: option? we always call .previous() right after
     fn consume_if(&mut self, token_type: TokenType) -> bool {
         if self.peek().value == token_type {
-            self.consume();
+            self.next();
             true
         } else {
             false
+        }
+    }
+    fn consume_identifier(&mut self) -> Option<String> {
+        if matches!(self.peek().value, TokenType::Identifier(_)) {
+            if let TokenType::Identifier(name) = &self.next().value {
+                Some(name.to_string())
+            } else {
+                panic!(".peek() said we had an idenitifier, but we didn't?")
+            }
+        } else {
+            // util function- we do this a few places
+            self.errors.push(ParserError::MissingVarName {
+                token: (*self.peek()).clone(),
+            });
+            None
         }
     }
 
@@ -221,7 +274,7 @@ impl Parser {
         &self.tokens[self.current]
     }
 
-    fn consume(&mut self) -> &Token {
+    fn next(&mut self) -> &Token {
         if !self.is_at_end() {
             self.current += 1;
         }
@@ -236,7 +289,7 @@ impl Parser {
     fn syncronize(&mut self) {
         use TokenType::*;
 
-        self.consume();
+        self.next();
 
         while !self.is_at_end() {
             if self.previous().value == Semicolon {
@@ -250,7 +303,7 @@ impl Parser {
                 return;
             }
 
-            self.consume();
+            self.next();
         }
     }
 }
