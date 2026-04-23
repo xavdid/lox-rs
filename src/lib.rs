@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    interpreter::evaluate,
+    interpreter::{InterpreterError, interpret},
     parser::{ParserError, parse},
     reader::{Source, read_source},
     scanner::{ScannerError, tokenize},
@@ -19,31 +19,41 @@ mod scanner;
 
 #[derive(Debug)]
 pub enum LoxError {
-    Reader(io::Error),
+    Reader(String),
     Scanner(String),
+    Parser(String),
+    Interpreter(String),
 }
 
 impl From<io::Error> for LoxError {
     fn from(value: io::Error) -> Self {
-        LoxError::Reader(value)
+        LoxError::Reader(value.to_string())
     }
 }
 
 impl From<Vec<ScannerError>> for LoxError {
     fn from(value: Vec<ScannerError>) -> Self {
-        LoxError::Scanner(value.iter().map(|e| format!("Scanner: {e}\n")).collect())
+        LoxError::Scanner(
+            value
+                .iter()
+                .map(|e| format!("Scanner err: {e}\n"))
+                .collect(),
+        )
     }
 }
 impl From<Vec<ParserError>> for LoxError {
     fn from(value: Vec<ParserError>) -> Self {
-        LoxError::Scanner(value.iter().map(|e| format!("Parser: {e}\n")).collect())
+        LoxError::Parser(value.iter().map(|e| format!("Parser err: {e}\n")).collect())
+    }
+}
+impl From<InterpreterError> for LoxError {
+    fn from(value: InterpreterError) -> Self {
+        LoxError::Interpreter(format!("{value}"))
     }
 }
 
 pub fn run_file(file_path: &str) -> Result<(), LoxError> {
-    // TODO: read file
     let source = read_source(file_path)?;
-    println!("{}", source.text);
     run(&source)
 }
 
@@ -66,11 +76,11 @@ pub fn run_repl() -> ! {
             exit(0);
         }
 
-        // TODO: handle errors
-        run(&Source {
+        if let Err(e) = run(&Source {
             text: input.to_string(),
-        })
-        .expect("no errors");
+        }) {
+            eprintln!("{e:?}");
+        }
     }
 }
 
@@ -78,11 +88,8 @@ pub fn run_repl() -> ! {
 pub fn run(input: &Source) -> Result<(), LoxError> {
     // this is the core of the interpreter
     let tokens = tokenize(input)?;
-    let ast = parse(tokens);
-    match evaluate(&ast?.root) {
-        Ok(v) => println!("{v:?}"),
-        Err(e) => eprintln!("{e}"),
-    }
+    let ast = parse(tokens)?;
+    interpret(ast)?;
 
     Ok(())
 }

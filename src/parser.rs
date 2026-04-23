@@ -1,18 +1,22 @@
 use std::fmt::Display;
 
-use crate::ast::{Ast, Expr, Literal};
+use crate::ast::{Ast, Expr, Literal, Stmt};
 use crate::scanner::{Token, TokenType, Tokens};
 
 #[derive(Debug, PartialEq)]
 pub enum ParserError {
     MissingRParen { token: Token },
+    MissingSemiColon { token: Token },
 }
 
 impl Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParserError::MissingRParen { token } => {
-                write!(f, "[{token}] Missing ')' after expression.",)
+                write!(f, "[{token}] Missing ')' after expression.")
+            }
+            ParserError::MissingSemiColon { token } => {
+                write!(f, "[{token}] Missing ';' after statement.")
             }
         }
     }
@@ -45,21 +49,60 @@ impl Parser {
     }
 
     pub fn parse(mut self) -> Result<Ast, Vec<ParserError>> {
-        let root = self.parse_expression();
+        let statements = self.parse_statements();
 
         if self.errors.is_empty() {
-            if let Some(root) = root {
-                Ok(Ast { root })
-            } else {
-                panic!("no errors, but an empty root node?")
-            }
+            Ok(Ast { statements })
         } else {
             Err(self.errors)
         }
     }
 
+    // TODO: does this need to be an option? does it ever fail?
     fn parse_expression(&mut self) -> Option<Expr> {
         self.parse_binary().or_else(|| self.parse_term())
+    }
+
+    fn parse_statements(&mut self) -> Vec<Stmt> {
+        let mut res = vec![];
+        while !self.is_at_end() {
+            match self.parse_statement() {
+                Some(s) => res.push(s),
+                None => self.syncronize(),
+            };
+        }
+        res
+    }
+    fn parse_statement(&mut self) -> Option<Stmt> {
+        if self.consume_if(TokenType::Print) {
+            self.parse_print_statement()
+        } else {
+            self.parse_expression_statement()
+        }
+    }
+
+    fn parse_print_statement(&mut self) -> Option<Stmt> {
+        let value = self.parse_expression()?;
+        if self.consume_if(TokenType::Semicolon) {
+            Some(Stmt::Print(value))
+        } else {
+            self.errors.push(ParserError::MissingSemiColon {
+                token: (*self.peek()).clone(),
+            });
+            None
+        }
+    }
+
+    fn parse_expression_statement(&mut self) -> Option<Stmt> {
+        let value = self.parse_expression()?;
+        if self.consume_if(TokenType::Semicolon) {
+            Some(Stmt::Expression(value))
+        } else {
+            self.errors.push(ParserError::MissingSemiColon {
+                token: (*self.peek()).clone(),
+            });
+            None
+        }
     }
 
     fn parse_binary(&mut self) -> Option<Expr> {
@@ -188,6 +231,28 @@ impl Parser {
     fn previous(&self) -> &Token {
         &self.tokens[self.current - 1]
     }
+
+    /** if we hit a parser error, call this to fast forward until we hit what we think is the start of a statement. This minimizes cascading errors */
+    fn syncronize(&mut self) {
+        use TokenType::*;
+
+        self.consume();
+
+        while !self.is_at_end() {
+            if self.previous().value == Semicolon {
+                return;
+            }
+
+            if matches!(
+                self.peek().value,
+                Class | Fun | Var | For | If | While | Print | Return
+            ) {
+                return;
+            }
+
+            self.consume();
+        }
+    }
 }
 
 pub fn parse(tokens: Tokens) -> Result<Ast, Vec<ParserError>> {
@@ -208,6 +273,10 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
@@ -215,7 +284,7 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Ok(Ast {
-                root: Expr::Literal(Literal::Nil)
+                statements: vec![Stmt::Expression(Expr::Literal(Literal::Nil))]
             })
         )
     }
@@ -228,6 +297,10 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
@@ -235,7 +308,7 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Ok(Ast {
-                root: Expr::Literal(Literal::False)
+                statements: vec![Stmt::Expression(Expr::Literal(Literal::False))]
             })
         )
     }
@@ -248,6 +321,10 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
@@ -255,7 +332,9 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Ok(Ast {
-                root: Expr::Literal(Literal::String("cool".to_string()))
+                statements: vec![Stmt::Expression(Expr::Literal(Literal::String(
+                    "cool".to_string()
+                )))]
             })
         )
     }
@@ -268,6 +347,10 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
@@ -275,7 +358,7 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Ok(Ast {
-                root: Expr::Literal(Literal::Number(123.0))
+                statements: vec![Stmt::Expression(Expr::Literal(Literal::Number(123.0)))]
             })
         )
     }
@@ -288,6 +371,10 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
@@ -295,7 +382,7 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Ok(Ast {
-                root: Expr::Literal(Literal::Number(123.456))
+                statements: vec![Stmt::Expression(Expr::Literal(Literal::Number(123.456)))]
             })
         )
     }
@@ -316,6 +403,10 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
@@ -323,7 +414,9 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Ok(Ast {
-                root: Expr::Grouping(Expr::Literal(Literal::True).into())
+                statements: vec![Stmt::Expression(Expr::Grouping(
+                    Expr::Literal(Literal::True).into()
+                ))]
             })
         )
     }
@@ -340,6 +433,10 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
@@ -347,10 +444,10 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Ok(Ast {
-                root: Expr::Unary {
+                statements: vec![Stmt::Expression(Expr::Unary {
                     op: UnaryOp::Neg,
                     expr: Expr::Literal(Literal::Number(3.0)).into()
-                }
+                })]
             })
         )
     }
@@ -371,6 +468,10 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
@@ -378,11 +479,11 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Ok(Ast {
-                root: Expr::Binary {
+                statements: vec![Stmt::Expression(Expr::Binary {
                     left: Expr::Literal(Literal::Number(1.0)).into(),
                     op: BinaryOp::Div,
                     right: Expr::Literal(Literal::Number(2.0)).into()
-                }
+                })]
             })
         )
     }
@@ -403,6 +504,10 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
@@ -410,14 +515,14 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Ok(Ast {
-                root: Expr::Unary {
+                statements: vec![Stmt::Expression(Expr::Unary {
                     op: UnaryOp::Not,
                     expr: Expr::Unary {
                         op: UnaryOp::Not,
                         expr: Expr::Literal(Literal::Number(2.0)).into()
                     }
                     .into()
-                }
+                })]
             })
         )
     }
@@ -454,6 +559,10 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
@@ -461,7 +570,7 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Ok(Ast {
-                root: Expr::Binary {
+                statements: vec![Stmt::Expression(Expr::Binary {
                     left: Expr::Literal(Literal::Number(3.0)).into(),
                     op: BinaryOp::Mul,
                     right: Expr::Grouping(
@@ -473,7 +582,7 @@ mod tests {
                         .into()
                     )
                     .into()
-                }
+                })]
             })
         )
     }
@@ -518,6 +627,10 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
@@ -525,7 +638,7 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Ok(Ast {
-                root: Expr::Binary {
+                statements: vec![Stmt::Expression(Expr::Binary {
                     left: Expr::Unary {
                         op: UnaryOp::Neg,
                         expr: Expr::Literal(Literal::Number(3.0)).into()
@@ -545,7 +658,35 @@ mod tests {
                         .into()
                     )
                     .into()
-                }
+                })]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_print_statements() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Print,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Print(Expr::Literal(Literal::Number(3.0)))]
             })
         )
     }
@@ -562,20 +703,22 @@ mod tests {
                 line: 1,
             },
             Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
                 value: TokenType::Eof,
                 line: 1,
             },
         ]);
+        let res = parser.parse().unwrap_err();
+        assert_eq!(res.len(), 2);
         assert_eq!(
-            parser
-                .parse()
-                .expect_err("expected an error")
-                // my code returns two errors, since i don't sync well/)
-                .first()
-                .expect("expected an element"),
+            // TODO: my code returns two errors? feels like sync should fix this
+            res.first().expect("expected an element"),
             &ParserError::MissingRParen {
                 token: Token {
-                    value: TokenType::Eof,
+                    value: TokenType::Semicolon,
                     line: 1
                 }
             }

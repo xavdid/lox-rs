@@ -10,6 +10,19 @@ pub enum LoxValue {
     Nil,
 }
 
+impl Display for LoxValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let res = match self {
+            LoxValue::Nil => "nil",
+            LoxValue::Number(v) => &v.to_string(),
+            LoxValue::LString(v) => v,
+            LoxValue::Boolean(v) => &v.to_string(),
+        };
+        write!(f, "{res}")
+    }
+}
+
+#[allow(clippy::enum_variant_names)] // unless we never get an invalid thing?
 #[derive(Debug, PartialEq)]
 pub enum InterpreterError {
     InvalidUnaryExpr(Expr),
@@ -42,7 +55,29 @@ impl Display for InterpreterError {
     }
 }
 
-pub fn evaluate(expr: &Expr) -> Result<LoxValue, InterpreterError> {
+pub fn interpret(ast: Ast) -> Result<(), InterpreterError> {
+    for stmt in ast.statements {
+        execute(&stmt)?
+    }
+
+    Ok(())
+}
+
+fn execute(stmt: &Stmt) -> Result<(), InterpreterError> {
+    match stmt {
+        Stmt::Expression(expr) => {
+            evaluate(expr)?;
+        }
+        Stmt::Print(expr) => {
+            let val = evaluate(expr)?;
+            println!("{val}");
+        }
+    }
+
+    Ok(())
+}
+
+fn evaluate(expr: &Expr) -> Result<LoxValue, InterpreterError> {
     Ok(match expr {
         Expr::Literal(literal) => match literal {
             Literal::Number(n) => LoxValue::Number(*n),
@@ -75,7 +110,7 @@ pub fn evaluate(expr: &Expr) -> Result<LoxValue, InterpreterError> {
                 (Number(l), Gte, Number(r)) => Boolean(l >= r),
 
                 // string concat
-                (LString(l), Add, LString(r)) => LString(l.to_string() + &r),
+                (LString(l), Add, LString(r)) => LString(l.to_string() + r),
 
                 // equality requires same type and value
                 (l, Eq, r) => Boolean(l == r),

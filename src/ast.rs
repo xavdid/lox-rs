@@ -4,7 +4,7 @@ use crate::scanner::TokenType;
 
 #[derive(Debug, PartialEq)]
 pub struct Ast {
-    pub root: Expr,
+    pub statements: Vec<Stmt>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -130,6 +130,13 @@ impl Display for Expr {
         };
         write!(f, "{res}")
     }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Stmt {
+    // TODO: store information about where this came from? like line? in the evaluator we just know something is wrong)
+    Expression(Expr),
+    Print(Expr),
 }
 
 #[cfg(test)]

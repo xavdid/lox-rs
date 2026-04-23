@@ -5,8 +5,6 @@ pub struct Source {
 }
 
 pub fn read_source(path: &str) -> Result<Source, io::Error> {
-    println!("Reading source!");
-
     let text = read_to_string(path)?;
 
     Ok(Source { text })
