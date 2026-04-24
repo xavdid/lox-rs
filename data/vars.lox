@@ -1,2 +1,8 @@
 var h = "hello";
 print h + " World" + "!";
+
+var a;
+a = 1;
+a = 2;
+print a;
+print a = 3;

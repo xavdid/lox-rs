@@ -1,6 +1,4 @@
-use std::{
-    cell::RefCell, collections::HashMap, fmt::Display, hash::Hash, mem::discriminant, rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, mem::discriminant, rc::Rc};
 
 use crate::ast::*;
 
@@ -64,7 +62,8 @@ impl Display for InterpreterError {
 /** represents a scope */
 pub struct Environment {
     // Rc means I can have shared ownership of the object, useful when copying environments between scopes
-    // RefCell provies "interior mutability", meaning ownership checks are deferred to runtime instead of compile time
+    // RefCell provies "interior mutability", meaning `env` doesn't have to be mutably borrowed everywhere and .
+    //   ownership checks are deferred to runtime instead of compile time
     //   in exchange, multiple owners can all try to mutate the data (as long as they follow the normal rules; it's a panic if there are two mutable borrows at once)
     values: Rc<RefCell<HashMap<String, LoxValue>>>,
 }
@@ -85,21 +84,34 @@ impl Environment {
     }
 
     // set for the first time
-    pub fn define(&mut self, name: &str, value: LoxValue) {
+    // var a = 3;
+    pub fn define(&self, name: &str, value: LoxValue) {
         self.values.borrow_mut().insert(name.into(), value);
+    }
+
+    // updates an existing variable, but can't create
+    // var a; a = 3; // ok
+    // b = 3; // err, `b` is not defined
+    pub fn assign(&self, name: &str, value: LoxValue) -> Result<LoxValue, bool> {
+        if self.values.borrow().contains_key(name) {
+            self.values.borrow_mut().insert(name.into(), value.clone());
+            Ok(value)
+        } else {
+            Err(false) // these bools are a code smell
+        }
     }
 }
 
 pub fn interpret(ast: Ast) -> Result<(), InterpreterError> {
-    let mut env = Environment::new();
+    let env = Environment::new();
     for stmt in ast.statements {
-        execute(&stmt, &mut env)?
+        execute(&stmt, &env)?
     }
 
     Ok(())
 }
 
-fn execute(stmt: &Stmt, env: &mut Environment) -> Result<(), InterpreterError> {
+fn execute(stmt: &Stmt, env: &Environment) -> Result<(), InterpreterError> {
     match stmt {
         Stmt::Expression(expr) => {
             evaluate(expr, env)?;
@@ -194,6 +206,14 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue, InterpreterError
             Ok(v) => v,
             Err(_) => return Err(InterpreterError::UndefinedVariable(expr.clone())),
         },
+        Expr::Assign { name, value } => {
+            let val = evaluate(value, env)?;
+
+            match env.assign(name, val.clone()) {
+                Ok(_) => val,
+                Err(_) => return Err(InterpreterError::UndefinedVariable(expr.clone())),
+            }
+        }
     })
 }
 
@@ -462,7 +482,7 @@ mod tests {
 
     #[test]
     fn it_evaluates_present_variables() {
-        let mut env = Environment::new();
+        let env = Environment::new();
         env.define("name", LoxValue::LString("david".to_string()));
 
         assert_eq!(
@@ -472,8 +492,8 @@ mod tests {
     }
 
     #[test]
-    fn it_sets_basic_variables() {
-        let mut env = Environment::new();
+    fn it_declares_values() {
+        let env = Environment::new();
 
         assert_eq!(
             execute(
@@ -481,7 +501,7 @@ mod tests {
                     name: "name".to_string(),
                     val: Expr::Literal(Literal::String("david".to_string())).into()
                 },
-                &mut env
+                &env
             ),
             Ok(())
         );
@@ -490,7 +510,53 @@ mod tests {
     }
 
     #[test]
-    fn it_fails_for_missing_variables() {
+    fn it_initializes_vars_to_nil() {
+        let env = Environment::new();
+
+        assert_eq!(
+            execute(
+                &Stmt::Var {
+                    name: "name".to_string(),
+                    val: None
+                },
+                &env
+            ),
+            Ok(())
+        );
+
+        assert_eq!(env.get("name"), Ok(LoxValue::Nil));
+    }
+
+    #[test]
+    fn it_assigns_values() {
+        let env = Environment::new();
+
+        assert_eq!(
+            execute(
+                &Stmt::Var {
+                    name: "name".to_string(),
+                    val: None
+                },
+                &env
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            execute(
+                &Stmt::Expression(Expr::Assign {
+                    name: "name".to_string(),
+                    value: Expr::Literal(Literal::String("david".to_string())).into()
+                }),
+                &env
+            ),
+            Ok(())
+        );
+
+        assert_eq!(env.get("name"), Ok(LoxValue::LString("david".to_string())));
+    }
+
+    #[test]
+    fn it_fails_to_read_missing_variables() {
         let expr = Expr::Variable("name".to_string());
         assert_eq!(
             test_eval(&expr),

@@ -9,6 +9,7 @@ pub enum ParserError {
     MissingRParen { token: Token },
     MissingSemiColon { token: Token },
     MissingVarName { token: Token },
+    InvalidAssignmentTarget { token: Token },
 }
 
 impl Display for ParserError {
@@ -21,7 +22,10 @@ impl Display for ParserError {
                 write!(f, "[{token}] Missing ';' after statement.")
             }
             ParserError::MissingVarName { token } => write!(f, "[{token}] Missing variable name."),
-            ParserError::NoExpression => todo!(),
+            ParserError::NoExpression => write!(f, "No expressions at all?"),
+            ParserError::InvalidAssignmentTarget { token } => {
+                write!(f, "[{token}] Invaild assignment target.")
+            }
         }
     }
 }
@@ -78,7 +82,7 @@ impl Parser {
     // each function represents a slightly weaker operator precedence
 
     fn parse_declaration(&mut self) -> Option<Stmt> {
-        let maybe_statement = if self.consume_if(TokenType::Var) {
+        let maybe_statement = if self.next_if(TokenType::Var) {
             self.parse_var_declaration()
         } else {
             self.parse_statement()
@@ -97,13 +101,13 @@ impl Parser {
     fn parse_var_declaration(&mut self) -> Result<Stmt, ParserError> {
         let name = self.consume_identifier()?;
 
-        let val = if self.consume_if(TokenType::Equal) {
+        let val = if self.next_if(TokenType::Equal) {
             Some(self.parse_expression()?)
         } else {
             None
         };
 
-        if self.consume_if(TokenType::Semicolon) {
+        if self.next_if(TokenType::Semicolon) {
             Ok(Stmt::Var { name, val })
         } else {
             Err(ParserError::MissingSemiColon {
@@ -113,7 +117,7 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
-        if self.consume_if(TokenType::Print) {
+        if self.next_if(TokenType::Print) {
             self.parse_print_statement()
         } else {
             self.parse_expression_statement()
@@ -122,7 +126,7 @@ impl Parser {
 
     fn parse_print_statement(&mut self) -> Result<Stmt, ParserError> {
         let value = self.parse_expression()?;
-        if self.consume_if(TokenType::Semicolon) {
+        if self.next_if(TokenType::Semicolon) {
             Ok(Stmt::Print(value))
         } else {
             Err(ParserError::MissingSemiColon {
@@ -133,7 +137,7 @@ impl Parser {
 
     fn parse_expression_statement(&mut self) -> Result<Stmt, ParserError> {
         let value = self.parse_expression()?;
-        if self.consume_if(TokenType::Semicolon) {
+        if self.next_if(TokenType::Semicolon) {
             Ok(Stmt::Expression(value))
         } else {
             Err(ParserError::MissingSemiColon {
@@ -143,13 +147,33 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<Expr, ParserError> {
-        self.parse_equality()
+        self.parse_assignment()
+    }
+
+    fn parse_assignment(&mut self) -> Result<Expr, ParserError> {
+        let expr = self.parse_equality()?;
+
+        if self.next_if(TokenType::Equal) {
+            let equals_token = self.previous();
+            let token = equals_token.clone();
+            let value = self.parse_assignment()?;
+
+            return match &expr {
+                Expr::Variable(name) => Ok(Expr::Assign {
+                    name: name.to_string(),
+                    value: value.into(),
+                }),
+                _ => Err(ParserError::InvalidAssignmentTarget { token }),
+            };
+        }
+
+        Ok(expr)
     }
 
     fn parse_equality(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.parse_comparison()?;
 
-        while self.consume_if(TokenType::BangEqual) || self.consume_if(TokenType::EqualEqual) {
+        while self.next_if(TokenType::BangEqual) || self.next_if(TokenType::EqualEqual) {
             let op = self.previous().value.clone().into();
             let right = self.parse_comparison()?.into();
             expr = Expr::Binary {
@@ -165,10 +189,10 @@ impl Parser {
     fn parse_comparison(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.parse_term()?;
 
-        while self.consume_if(TokenType::GreaterThan)
-            || self.consume_if(TokenType::GreaterThanEqual)
-            || self.consume_if(TokenType::LessThan)
-            || self.consume_if(TokenType::LessThanEqual)
+        while self.next_if(TokenType::GreaterThan)
+            || self.next_if(TokenType::GreaterThanEqual)
+            || self.next_if(TokenType::LessThan)
+            || self.next_if(TokenType::LessThanEqual)
         {
             let op = self.previous().value.clone().into();
             let right = self.parse_term()?.into();
@@ -186,7 +210,7 @@ impl Parser {
     fn parse_term(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.parse_factor()?;
 
-        while self.consume_if(TokenType::Minus) || self.consume_if(TokenType::Plus) {
+        while self.next_if(TokenType::Minus) || self.next_if(TokenType::Plus) {
             let op = self.previous().value.clone().into();
             let right = self.parse_unary()?.into();
             expr = Expr::Binary {
@@ -203,7 +227,7 @@ impl Parser {
     fn parse_factor(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.parse_unary()?;
 
-        while self.consume_if(TokenType::Slash) || self.consume_if(TokenType::Star) {
+        while self.next_if(TokenType::Slash) || self.next_if(TokenType::Star) {
             let op = self.previous().value.clone().into();
             let right = self.parse_unary()?.into();
             expr = Expr::Binary {
@@ -218,7 +242,7 @@ impl Parser {
 
     // infix operators, like `!true` and `-1`
     fn parse_unary(&mut self) -> Result<Expr, ParserError> {
-        if self.consume_if(TokenType::Bang) || self.consume_if(TokenType::Minus) {
+        if self.next_if(TokenType::Bang) || self.next_if(TokenType::Minus) {
             let op = self.previous().value.clone().into();
             let expr = self.parse_unary()?.into();
             Ok(Expr::Unary { op, expr })
@@ -251,10 +275,10 @@ impl Parser {
         }
 
         // otherwise, try a grouping
-        if self.consume_if(TokenType::LeftParen) {
+        if self.next_if(TokenType::LeftParen) {
             let expr = self.parse_expression()?;
 
-            if self.consume_if(TokenType::RightParen) {
+            if self.next_if(TokenType::RightParen) {
                 return Ok(Expr::Grouping(expr.into()));
             } else {
                 return Err(ParserError::MissingRParen {
@@ -270,7 +294,7 @@ impl Parser {
 
     /** book calls this `match`, but I don't like that it doesn't communicate that it advances the pointer. Returns whether it matched and advanced */
     // TODO: option? we always call .previous() right after
-    fn consume_if(&mut self, token_type: TokenType) -> bool {
+    fn next_if(&mut self, token_type: TokenType) -> bool {
         if self.peek().value == token_type {
             self.next();
             true
@@ -1090,6 +1114,43 @@ mod tests {
             &ParserError::MissingSemiColon {
                 token: Token {
                     value: TokenType::Eof,
+                    line: 1
+                }
+            }
+        )
+    }
+
+    #[test]
+    fn it_fails_for_invalid_assignment() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Equal,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("5".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        let res = parser.parse().unwrap_err();
+        assert_eq!(res.len(), 1);
+        assert_eq!(
+            res.first().unwrap(),
+            &ParserError::InvalidAssignmentTarget {
+                token: Token {
+                    value: TokenType::Equal,
                     line: 1
                 }
             }

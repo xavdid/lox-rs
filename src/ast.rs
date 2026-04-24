@@ -120,6 +120,10 @@ pub enum Expr {
     Grouping(Box<Expr>),
     /** variable read by name */
     Variable(String),
+    Assign {
+        name: String,
+        value: Box<Expr>,
+    },
 }
 
 impl Display for Expr {
@@ -129,7 +133,8 @@ impl Display for Expr {
             Expr::Binary { left, op, right } => format!("{left} {op} {right}"),
             Expr::Unary { op, expr } => format!("{op}{expr}"),
             Expr::Grouping(expr) => format!("({expr})"),
-            Expr::Variable(_) => todo!(),
+            Expr::Variable(name) => format!("{name}"),
+            Expr::Assign { name, value } => format!("{name} = {value}"),
         };
         write!(f, "{res}")
     }
