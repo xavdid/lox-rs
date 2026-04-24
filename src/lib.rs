@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     io::{self, Write},
     process::exit,
 };
@@ -25,6 +26,18 @@ pub enum LoxError {
     Interpreter(String),
 }
 
+impl Display for LoxError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            LoxError::Reader(m) => m,
+            LoxError::Scanner(m) => m,
+            LoxError::Parser(m) => m,
+            LoxError::Interpreter(m) => m,
+        };
+        write!(f, "{message}")
+    }
+}
+
 impl From<io::Error> for LoxError {
     fn from(value: io::Error) -> Self {
         LoxError::Reader(value.to_string())
@@ -43,7 +56,7 @@ impl From<Vec<ScannerError>> for LoxError {
 }
 impl From<Vec<ParserError>> for LoxError {
     fn from(value: Vec<ParserError>) -> Self {
-        LoxError::Parser(value.iter().map(|e| format!("Parser err: {e}\n")).collect())
+        LoxError::Parser(value.iter().map(|e| format!("\n{e}")).collect())
     }
 }
 impl From<InterpreterError> for LoxError {
@@ -79,7 +92,7 @@ pub fn run_repl() -> ! {
         if let Err(e) = run(&Source {
             text: input.to_string(),
         }) {
-            eprintln!("{e:?}");
+            eprintln!("{e}")
         }
     }
 }

@@ -25,3 +25,7 @@ sync-all message: && (sync message)
 
 alias s := sync
 alias sa := sync-all
+
+example name:
+  cargo run data/{{ name }}.lox
+alias ex := example
