@@ -3,9 +3,9 @@ use std::fmt::Display;
 use crate::ast::{Ast, Expr, Literal, Stmt};
 use crate::scanner::{Token, TokenType, Tokens};
 
-#[allow(clippy::enum_variant_names)] // unless we never get a missing thing?
 #[derive(Debug, PartialEq)]
 pub enum ParserError {
+    NoExpression,
     MissingRParen { token: Token },
     MissingSemiColon { token: Token },
     MissingVarName { token: Token },
@@ -21,6 +21,7 @@ impl Display for ParserError {
                 write!(f, "[{token}] Missing ';' after statement.")
             }
             ParserError::MissingVarName { token } => write!(f, "[{token}] Missing variable name."),
+            ParserError::NoExpression => todo!(),
         }
     }
 }
@@ -31,16 +32,15 @@ pub struct Parser {
     current: usize,
 }
 
-// grammar (different from book):
-
-// expression   := binary | term ;
-// binary       := term operator term ;
-// term         := literal | unary | grouping ;
-// unary        := ("-" | "!") term ;
-// literal      := NUMBER | STRING | "true" | "false" | "nil" ;
-// grouping     := "(" expression ")" ;
-// operator     :=  "==" | "!=" | "<" | "<=" | ">" | ">="
-//                 | "+" | "-"  | "*" | "/" ;
+// expression     -> equality ;
+// equality       -> comparison ( ( "!=" | "==" ) comparison )* ;
+// comparison     -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+// term           -> factor ( ( "-" | "+" ) factor )* ;
+// factor         -> unary ( ( "/" | "*" ) unary )* ;
+// unary          -> ( "!" | "-" ) unary
+//                | primary ;
+// primary        -> NUMBER | STRING | "true" | "false" | "nil"
+//                | "(" expression ")" ;
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
@@ -60,12 +60,6 @@ impl Parser {
             Err(self.errors)
         }
     }
-
-    // TODO: does this need to be an option? does it ever fail?
-    fn parse_expression(&mut self) -> Option<Expr> {
-        self.parse_binary().or_else(|| self.parse_term())
-    }
-
     fn parse_statements(&mut self) -> Vec<Stmt> {
         let mut res = vec![];
         while !self.is_at_end() {
@@ -75,6 +69,10 @@ impl Parser {
         }
         res
     }
+
+    // this is a _recursive descent_ parser, which means it recurses all the way down until it errors (by not finding an experssion at all, or hits some other parsing issue)
+    // each function represents a slightly weaker operator precedence
+
     fn parse_declaration(&mut self) -> Option<Stmt> {
         let maybe_statement = if self.consume_if(TokenType::Var) {
             self.parse_var_declaration()
@@ -82,32 +80,35 @@ impl Parser {
             self.parse_statement()
         };
 
-        maybe_statement.or_else(|| {
-            self.syncronize();
-            None
-        })
+        match maybe_statement {
+            Ok(statement) => Some(statement),
+            Err(err) => {
+                self.errors.push(err);
+                self.syncronize();
+                None
+            }
+        }
     }
 
-    fn parse_var_declaration(&mut self) -> Option<Stmt> {
+    fn parse_var_declaration(&mut self) -> Result<Stmt, ParserError> {
         let name = self.consume_identifier()?;
 
         let val = if self.consume_if(TokenType::Equal) {
-            self.parse_expression()
+            Some(self.parse_expression()?)
         } else {
             None
         };
 
         if self.consume_if(TokenType::Semicolon) {
-            Some(Stmt::Var { name, val })
+            Ok(Stmt::Var { name, val })
         } else {
-            self.errors.push(ParserError::MissingSemiColon {
+            Err(ParserError::MissingSemiColon {
                 token: (*self.peek()).clone(),
-            });
-            None
+            })
         }
     }
 
-    fn parse_statement(&mut self) -> Option<Stmt> {
+    fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
         if self.consume_if(TokenType::Print) {
             self.parse_print_statement()
         } else {
@@ -115,127 +116,145 @@ impl Parser {
         }
     }
 
-    fn parse_print_statement(&mut self) -> Option<Stmt> {
+    fn parse_print_statement(&mut self) -> Result<Stmt, ParserError> {
         let value = self.parse_expression()?;
         if self.consume_if(TokenType::Semicolon) {
-            Some(Stmt::Print(value))
+            Ok(Stmt::Print(value))
         } else {
-            self.errors.push(ParserError::MissingSemiColon {
+            Err(ParserError::MissingSemiColon {
                 token: (*self.peek()).clone(),
-            });
-            None
+            })
         }
     }
 
-    fn parse_expression_statement(&mut self) -> Option<Stmt> {
+    fn parse_expression_statement(&mut self) -> Result<Stmt, ParserError> {
         let value = self.parse_expression()?;
         if self.consume_if(TokenType::Semicolon) {
-            Some(Stmt::Expression(value))
+            Ok(Stmt::Expression(value))
         } else {
-            self.errors.push(ParserError::MissingSemiColon {
+            Err(ParserError::MissingSemiColon {
                 token: (*self.peek()).clone(),
-            });
-            None
+            })
         }
     }
 
-    fn parse_binary(&mut self) -> Option<Expr> {
-        let cur = self.current;
-        if let Some(left) = self.parse_term() {
-            // to be valid binary, the next bit has to be a binary operator
-            if matches!(
-                self.peek().value,
-                TokenType::EqualEqual
-                    | TokenType::BangEqual
-                    | TokenType::LessThan
-                    | TokenType::LessThanEqual
-                    | TokenType::GreaterThan
-                    | TokenType::GreaterThanEqual
-                    | TokenType::Plus
-                    | TokenType::Minus
-                    | TokenType::Star
-                    | TokenType::Slash
-            ) {
-                // TODO: if I used &str in my tokens, I'd be able to copy here
-                // there aren't _that_ many places I'd ned to add need lifetimes
-                let op = self.next().value.clone().into();
+    fn parse_expression(&mut self) -> Result<Expr, ParserError> {
+        self.parse_equality()
+    }
 
-                if let Some(right) = self.parse_term() {
-                    return Some(Expr::Binary {
-                        left: left.into(),
-                        op,
-                        right: right.into(),
-                    });
-                }
-            }
+    fn parse_equality(&mut self) -> Result<Expr, ParserError> {
+        let mut expr = self.parse_comparison()?;
+
+        while self.consume_if(TokenType::BangEqual) || self.consume_if(TokenType::EqualEqual) {
+            let op = self.previous().value.clone().into();
+            let right = self.parse_comparison()?.into();
+            expr = Expr::Binary {
+                left: expr.into(),
+                op,
+                right,
+            };
         }
 
-        // unroll if we didn't find a binary expression
-        self.current = cur;
-        None
+        Ok(expr)
     }
 
-    fn parse_term(&mut self) -> Option<Expr> {
-        self.parse_primary()
-            .or_else(|| self.parse_unary())
-            .or_else(|| self.parse_grouping())
+    fn parse_comparison(&mut self) -> Result<Expr, ParserError> {
+        let mut expr = self.parse_term()?;
+
+        while self.consume_if(TokenType::GreaterThan)
+            || self.consume_if(TokenType::GreaterThanEqual)
+            || self.consume_if(TokenType::LessThan)
+            || self.consume_if(TokenType::LessThanEqual)
+        {
+            let op = self.previous().value.clone().into();
+            let right = self.parse_term()?.into();
+            expr = Expr::Binary {
+                left: expr.into(),
+                op,
+                right,
+            };
+        }
+
+        Ok(expr)
     }
 
-    fn parse_primary(&mut self) -> Option<Expr> {
-        let maybe_literal = match &self.peek().value {
+    // addition / subtraction
+    fn parse_term(&mut self) -> Result<Expr, ParserError> {
+        let mut expr = self.parse_factor()?;
+
+        while self.consume_if(TokenType::Minus) || self.consume_if(TokenType::Plus) {
+            let op = self.previous().value.clone().into();
+            let right = self.parse_unary()?.into();
+            expr = Expr::Binary {
+                left: expr.into(),
+                op,
+                right,
+            };
+        }
+
+        Ok(expr)
+    }
+
+    // multiplication / division
+    fn parse_factor(&mut self) -> Result<Expr, ParserError> {
+        let mut expr = self.parse_unary()?;
+
+        while self.consume_if(TokenType::Slash) || self.consume_if(TokenType::Star) {
+            let op = self.previous().value.clone().into();
+            let right = self.parse_unary()?.into();
+            expr = Expr::Binary {
+                left: expr.into(),
+                op,
+                right,
+            };
+        }
+
+        Ok(expr)
+    }
+
+    // infix operators, like `!true` and `-1`
+    fn parse_unary(&mut self) -> Result<Expr, ParserError> {
+        if self.consume_if(TokenType::Bang) || self.consume_if(TokenType::Minus) {
+            let op = self.previous().value.clone().into();
+            let expr = self.parse_unary()?.into();
+            Ok(Expr::Unary { op, expr })
+        } else {
+            self.parse_primary()
+        }
+    }
+
+    // this is our eventual base case (with the highest precedence)- literals no longer recurse
+    fn parse_primary(&mut self) -> Result<Expr, ParserError> {
+        if let Some(literal) = match &self.peek().value {
             TokenType::Nil => Some(Literal::Nil),
             TokenType::True => Some(Literal::True),
             TokenType::False => Some(Literal::False),
             TokenType::String(s) => Some(Literal::String(s.to_owned())),
             TokenType::Number(s) => Some(Literal::Number(
-                s.parse().expect("expected {s} to be a valid f64"),
+                s.parse()
+                    .expect("expected {s} to be a valid f64; scanner has a bug"),
             )),
             _ => None,
-        };
-
-        if let Some(literal) = maybe_literal {
+        } {
             self.next();
-            return Some(Expr::Literal(literal));
+            return Ok(Expr::Literal(literal));
         }
 
-        // if let Some(name) = self.consume_identifier() {
-        //     return Some(Expr::Variable(name));
-        // }
-
-        None
-    }
-
-    fn parse_unary(&mut self) -> Option<Expr> {
-        if self.consume_if(TokenType::Bang) || self.consume_if(TokenType::Minus) {
-            let op = self.previous().value.clone().into();
-            match self.parse_term() {
-                Some(term) => Some(Expr::Unary {
-                    op,
-                    expr: term.into(),
-                }),
-                None => todo!("don't think we can hit this?"),
-            }
-        } else {
-            None
-        }
-    }
-
-    fn parse_grouping(&mut self) -> Option<Expr> {
+        // otherwise, try a grouping
         if self.consume_if(TokenType::LeftParen) {
-            let ex = self.parse_expression();
-            if let Some(expr) = ex
-                && self.consume_if(TokenType::RightParen)
-            {
-                Some(Expr::Grouping(expr.into()))
+            let expr = self.parse_expression()?;
+
+            if self.consume_if(TokenType::RightParen) {
+                return Ok(Expr::Grouping(expr.into()));
             } else {
-                self.errors.push(ParserError::MissingRParen {
+                return Err(ParserError::MissingRParen {
                     token: (*self.peek()).clone(),
                 });
-                None
             }
-        } else {
-            None
         }
+
+        panic!("no expression at all?"); // not sure if/how we hit this
+        // Err(ParserError::NoExpression)
     }
 
     // HELPERS
@@ -250,19 +269,19 @@ impl Parser {
             false
         }
     }
-    fn consume_identifier(&mut self) -> Option<String> {
+    /**  this like `consume_if` but hardcodes Identifier since I can't match my enums that hold values as a function arg */
+    fn consume_identifier(&mut self) -> Result<String, ParserError> {
         if matches!(self.peek().value, TokenType::Identifier(_)) {
             if let TokenType::Identifier(name) = &self.next().value {
-                Some(name.to_string())
+                Ok(name.to_string())
             } else {
                 panic!(".peek() said we had an idenitifier, but we didn't?")
             }
         } else {
-            // util function- we do this a few places
-            self.errors.push(ParserError::MissingVarName {
+            // TODO: util function- we do this a few places
+            Err(ParserError::MissingVarName {
                 token: (*self.peek()).clone(),
-            });
-            None
+            })
         }
     }
 
@@ -765,10 +784,9 @@ mod tests {
             },
         ]);
         let res = parser.parse().unwrap_err();
-        assert_eq!(res.len(), 2);
+        assert_eq!(res.len(), 1);
         assert_eq!(
-            // TODO: my code returns two errors? feels like sync should fix this
-            res.first().expect("expected an element"),
+            res.first().unwrap(),
             &ParserError::MissingRParen {
                 token: Token {
                     value: TokenType::Semicolon,
