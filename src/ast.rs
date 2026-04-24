@@ -118,6 +118,7 @@ pub enum Expr {
         expr: Box<Expr>,
     },
     Grouping(Box<Expr>),
+    /** variable read by name */
     Variable(String),
 }
 
@@ -139,7 +140,11 @@ pub enum Stmt {
     // TODO: store information about where this came from? like line? in the evaluator we just know something is wrong)
     Expression(Expr),
     Print(Expr),
-    Var { name: String, val: Option<Expr> },
+    /** variable declaration (w/ optional initialization) */
+    Var {
+        name: String,
+        val: Option<Expr>,
+    },
 }
 
 #[cfg(test)]

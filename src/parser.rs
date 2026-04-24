@@ -32,6 +32,10 @@ pub struct Parser {
     current: usize,
 }
 
+// > basic expression grammar:
+// each level represents a new precedence
+// the bottom of the list has the higest coupling
+
 // expression     -> equality ;
 // equality       -> comparison ( ( "!=" | "==" ) comparison )* ;
 // comparison     -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
@@ -240,6 +244,12 @@ impl Parser {
             return Ok(Expr::Literal(literal));
         }
 
+        if let TokenType::Identifier(name) = &self.peek().value {
+            let name = name.clone(); // escape the borrow from self
+            self.next();
+            return Ok(Expr::Variable(name));
+        }
+
         // otherwise, try a grouping
         if self.consume_if(TokenType::LeftParen) {
             let expr = self.parse_expression()?;
@@ -253,8 +263,7 @@ impl Parser {
             }
         }
 
-        panic!("no expression at all?"); // not sure if/how we hit this
-        // Err(ParserError::NoExpression)
+        Err(ParserError::NoExpression)
     }
 
     // HELPERS
@@ -561,6 +570,68 @@ mod tests {
     }
 
     #[test]
+    fn it_parses_flat_nested_binary() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Number("1".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Plus,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("2".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Plus,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Minus,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("4".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Expression(Expr::Binary {
+                    left: Expr::Binary {
+                        left: Expr::Binary {
+                            left: Expr::Literal(Literal::Number(1.0)).into(),
+                            op: BinaryOp::Add,
+                            right: Expr::Literal(Literal::Number(2.0)).into(),
+                        }
+                        .into(),
+                        op: BinaryOp::Add,
+                        right: Expr::Literal(Literal::Number(3.0)).into(),
+                    }
+                    .into(),
+                    op: BinaryOp::Sub,
+                    right: Expr::Literal(Literal::Number(4.0)).into()
+                })]
+            })
+        )
+    }
+
+    #[test]
     fn it_parses_nested_unary() {
         let parser = Parser::new(vec![
             Token {
@@ -764,6 +835,206 @@ mod tests {
     }
 
     #[test]
+    fn it_parses_var_declarations_with_values() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Var,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Identifier("name".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Equal,
+                line: 1,
+            },
+            Token {
+                value: TokenType::String("david".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Var {
+                    name: "name".to_string(),
+                    val: Some(Expr::Literal(Literal::String("david".to_string())))
+                }]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_var_declarations_with_complex_values() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Var,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Identifier("name".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Equal,
+                line: 1,
+            },
+            Token {
+                value: TokenType::LeftParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("1".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Plus,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("2".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::RightParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Star,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Var {
+                    name: "name".to_string(),
+                    val: Some(Expr::Binary {
+                        left: Expr::Grouping(
+                            Expr::Binary {
+                                left: Expr::Literal(Literal::Number(1.0)).into(),
+                                op: BinaryOp::Add,
+                                right: Expr::Literal(Literal::Number(2.0)).into()
+                            }
+                            .into()
+                        )
+                        .into(),
+                        op: BinaryOp::Mul,
+                        right: Expr::Literal(Literal::Number(3.0)).into()
+                    })
+                }]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_empty_var_declarations() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Var,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Identifier("name".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Var {
+                    name: "name".to_string(),
+                    val: None
+                }]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_var_access() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Identifier("name".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Expression(Expr::Variable("name".to_string()))]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_nested_var_access() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Minus,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Identifier("name".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Expression(Expr::Unary {
+                    op: UnaryOp::Neg,
+                    expr: Expr::Variable("name".to_string()).into()
+                })]
+            })
+        )
+    }
+
+    #[test]
     fn it_fails_for_broken_grouping() {
         let parser = Parser::new(vec![
             Token {
@@ -790,6 +1061,35 @@ mod tests {
             &ParserError::MissingRParen {
                 token: Token {
                     value: TokenType::Semicolon,
+                    line: 1
+                }
+            }
+        )
+    }
+
+    #[test]
+    fn it_fails_for_missing_semi_in_print() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Print,
+                line: 1,
+            },
+            Token {
+                value: TokenType::True,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        let res = parser.parse().unwrap_err();
+        assert_eq!(res.len(), 1);
+        assert_eq!(
+            res.first().unwrap(),
+            &ParserError::MissingSemiColon {
+                token: Token {
+                    value: TokenType::Eof,
                     line: 1
                 }
             }
