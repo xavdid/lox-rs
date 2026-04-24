@@ -1,6 +1,7 @@
-use std::{cell::RefCell, collections::HashMap, fmt::Display, mem::discriminant, rc::Rc};
+use std::{fmt::Display, mem::discriminant};
 
 use crate::ast::*;
+use crate::environment::Environment;
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum LoxValue {
@@ -55,49 +56,6 @@ impl Display for InterpreterError {
             InterpreterError::UndefinedVariable(expr) => {
                 write!(f, "ERR: Variable {expr} not defined.",)
             }
-        }
-    }
-}
-
-/** represents a scope */
-pub struct Environment {
-    // Rc means I can have shared ownership of the object, useful when copying environments between scopes
-    // RefCell provies "interior mutability", meaning `env` doesn't have to be mutably borrowed everywhere and .
-    //   ownership checks are deferred to runtime instead of compile time
-    //   in exchange, multiple owners can all try to mutate the data (as long as they follow the normal rules; it's a panic if there are two mutable borrows at once)
-    values: Rc<RefCell<HashMap<String, LoxValue>>>,
-}
-
-impl Environment {
-    fn new() -> Self {
-        Environment {
-            values: Rc::new(RefCell::new(HashMap::new())),
-        }
-    }
-
-    pub fn get(&self, name: &str) -> Result<LoxValue, bool> {
-        self.values
-            .borrow()
-            .get(name)
-            .cloned() // TODO: this means we clone on every variable read, which isn't great!
-            .ok_or(false)
-    }
-
-    // set for the first time
-    // var a = 3;
-    pub fn define(&self, name: &str, value: LoxValue) {
-        self.values.borrow_mut().insert(name.into(), value);
-    }
-
-    // updates an existing variable, but can't create
-    // var a; a = 3; // ok
-    // b = 3; // err, `b` is not defined
-    pub fn assign(&self, name: &str, value: LoxValue) -> Result<LoxValue, bool> {
-        if self.values.borrow().contains_key(name) {
-            self.values.borrow_mut().insert(name.into(), value.clone());
-            Ok(value)
-        } else {
-            Err(false) // these bools are a code smell
         }
     }
 }
@@ -203,15 +161,15 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue, InterpreterError
         }
         Expr::Grouping(expr) => evaluate(expr, env)?,
         Expr::Variable(name) => match env.get(name) {
-            Ok(v) => v,
-            Err(_) => return Err(InterpreterError::UndefinedVariable(expr.clone())),
+            Some(v) => v,
+            None => return Err(InterpreterError::UndefinedVariable(expr.clone())),
         },
         Expr::Assign { name, value } => {
             let val = evaluate(value, env)?;
 
-            match env.assign(name, val.clone()) {
-                Ok(_) => val,
-                Err(_) => return Err(InterpreterError::UndefinedVariable(expr.clone())),
+            match env.assign(name, val) {
+                Some(val) => val,
+                None => return Err(InterpreterError::UndefinedVariable(expr.clone())),
             }
         }
     })
@@ -506,7 +464,10 @@ mod tests {
             Ok(())
         );
 
-        assert_eq!(env.get("name"), Ok(LoxValue::LString("david".to_string())));
+        assert_eq!(
+            env.get("name"),
+            Some(LoxValue::LString("david".to_string()))
+        );
     }
 
     #[test]
@@ -524,7 +485,7 @@ mod tests {
             Ok(())
         );
 
-        assert_eq!(env.get("name"), Ok(LoxValue::Nil));
+        assert_eq!(env.get("name"), Some(LoxValue::Nil));
     }
 
     #[test]
@@ -552,7 +513,10 @@ mod tests {
             Ok(())
         );
 
-        assert_eq!(env.get("name"), Ok(LoxValue::LString("david".to_string())));
+        assert_eq!(
+            env.get("name"),
+            Some(LoxValue::LString("david".to_string()))
+        );
     }
 
     #[test]

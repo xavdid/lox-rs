@@ -13,6 +13,7 @@ use crate::{
 
 mod ast;
 pub mod config;
+mod environment;
 mod interpreter;
 mod parser;
 mod reader;
