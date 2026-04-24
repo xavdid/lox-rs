@@ -7,6 +7,7 @@ use crate::scanner::{Token, TokenType, Tokens};
 pub enum ParserError {
     NoExpression,
     MissingRParen { token: Token },
+    MissingRBrace { token: Token },
     MissingSemiColon { token: Token },
     MissingVarName { token: Token },
     InvalidAssignmentTarget { token: Token },
@@ -17,6 +18,9 @@ impl Display for ParserError {
         match self {
             ParserError::MissingRParen { token } => {
                 write!(f, "[{token}] Missing ')' after expression.")
+            }
+            ParserError::MissingRBrace { token } => {
+                write!(f, "[{token}] Missing '}}' after block.")
             }
             ParserError::MissingSemiColon { token } => {
                 write!(f, "[{token}] Missing ';' after statement.")
@@ -32,7 +36,6 @@ impl Display for ParserError {
 
 pub struct Parser {
     tokens: Vec<Token>,
-    errors: Vec<ParserError>,
     current: usize,
 }
 
@@ -52,49 +55,38 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self {
-            tokens,
-            errors: vec![],
-            current: 0,
-        }
+        Self { tokens, current: 0 }
     }
 
     pub fn parse(mut self) -> Result<Ast, Vec<ParserError>> {
-        let statements = self.parse_statements();
+        let mut statements = vec![];
+        let mut errors = vec![];
 
-        if self.errors.is_empty() {
-            Ok(Ast { statements })
-        } else {
-            Err(self.errors)
-        }
-    }
-    fn parse_statements(&mut self) -> Vec<Stmt> {
-        let mut res = vec![];
         while !self.is_at_end() {
-            if let Some(statment) = self.parse_declaration() {
-                res.push(statment);
+            match self.parse_declaration() {
+                Ok(statement) => statements.push(statement),
+                Err(err) => {
+                    errors.push(err);
+                    self.syncronize();
+                }
             }
         }
-        res
+
+        if errors.is_empty() {
+            Ok(Ast { statements })
+        } else {
+            Err(errors)
+        }
     }
 
     // this is a _recursive descent_ parser, which means it recurses all the way down until it errors (by not finding an experssion at all, or hits some other parsing issue)
     // each function represents a slightly weaker operator precedence
 
-    fn parse_declaration(&mut self) -> Option<Stmt> {
-        let maybe_statement = if self.next_if(TokenType::Var) {
+    fn parse_declaration(&mut self) -> Result<Stmt, ParserError> {
+        if self.next_if(TokenType::Var) {
             self.parse_var_declaration()
         } else {
             self.parse_statement()
-        };
-
-        match maybe_statement {
-            Ok(statement) => Some(statement),
-            Err(err) => {
-                self.errors.push(err);
-                self.syncronize();
-                None
-            }
         }
     }
 
@@ -119,6 +111,8 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
         if self.next_if(TokenType::Print) {
             self.parse_print_statement()
+        } else if self.next_if(TokenType::LeftBrace) {
+            self.parse_block()
         } else {
             self.parse_expression_statement()
         }
@@ -130,6 +124,22 @@ impl Parser {
             Ok(Stmt::Print(value))
         } else {
             Err(ParserError::MissingSemiColon {
+                token: (*self.peek()).clone(),
+            })
+        }
+    }
+
+    fn parse_block(&mut self) -> Result<Stmt, ParserError> {
+        let mut res = vec![];
+
+        while !matches!(self.peek().value, TokenType::RightBrace) && !self.is_at_end() {
+            res.push(self.parse_declaration()?);
+        }
+
+        if self.next_if(TokenType::RightBrace) {
+            Ok(Stmt::Block(res))
+        } else {
+            Err(ParserError::MissingRParen {
                 token: (*self.peek()).clone(),
             })
         }
@@ -856,6 +866,107 @@ mod tests {
                 statements: vec![Stmt::Print(Expr::Literal(Literal::Number(3.0)))]
             })
         )
+    }
+
+    #[test]
+    fn it_parses_block_statements() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::LeftBrace,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Print,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("2".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Print,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::RightBrace,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Block(vec![
+                    Stmt::Print(Expr::Literal(Literal::Number(2.0))),
+                    Stmt::Print(Expr::Literal(Literal::Number(3.0)))
+                ])]
+            })
+        )
+    }
+
+    #[test]
+    fn it_fails_on_bad_block_statements() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::LeftBrace,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Print,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("2".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Print,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+
+        let res = parser.parse().unwrap_err();
+        assert_eq!(res.len(), 1);
+        assert_eq!(
+            res.first().unwrap(),
+            &ParserError::MissingRParen {
+                token: Token {
+                    value: TokenType::Eof,
+                    line: 1
+                }
+            }
+        );
     }
 
     #[test]

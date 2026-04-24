@@ -69,6 +69,7 @@ pub fn interpret(ast: Ast) -> Result<(), InterpreterError> {
     Ok(())
 }
 
+/** execute a statement for its side effects */
 fn execute(stmt: &Stmt, env: &Environment) -> Result<(), InterpreterError> {
     match stmt {
         Stmt::Expression(expr) => {
@@ -87,11 +88,19 @@ fn execute(stmt: &Stmt, env: &Environment) -> Result<(), InterpreterError> {
                 },
             );
         }
+        Stmt::Block(stmts) => {
+            let subscope = env.child_scope();
+
+            for s in stmts {
+                execute(s, &subscope)?;
+            }
+        }
     }
 
     Ok(())
 }
 
+/** evaluate the result of an exprsesion */
 fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue, InterpreterError> {
     Ok(match expr {
         Expr::Literal(literal) => match literal {
@@ -517,6 +526,26 @@ mod tests {
             env.get("name"),
             Some(LoxValue::LString("david".to_string()))
         );
+    }
+
+    #[test]
+    fn it_creates_new_env_for_blocks() {
+        let env = Environment::new();
+
+        assert_eq!(
+            execute(
+                // this declaration happens in a subscope...
+                &Stmt::Block(vec![Stmt::Var {
+                    name: "name".to_string(),
+                    val: Expr::Literal(Literal::String("david".to_string())).into(),
+                }]),
+                &env
+            ),
+            Ok(())
+        );
+
+        // ... so the variable isn't present in our root scope
+        assert_eq!(env.get("name"), None);
     }
 
     #[test]

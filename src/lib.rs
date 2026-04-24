@@ -74,6 +74,9 @@ pub fn run_file(file_path: &str) -> Result<(), LoxError> {
 // never returns; run until quit
 pub fn run_repl() -> ! {
     // TODO: add environment
+    // TODO: print expressions, e.g.
+    // >>> 1 + 1;
+    // > 2
     loop {
         print!("lox.rs >>> ");
         io::stdout().flush().expect("flush to work");
@@ -98,7 +101,6 @@ pub fn run_repl() -> ! {
     }
 }
 
-// TODO: this should probably return something? for testability?
 pub fn run(input: &Source) -> Result<(), LoxError> {
     // this is the core of the interpreter
     let tokens = tokenize(input)?;

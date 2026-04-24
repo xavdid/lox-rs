@@ -133,7 +133,7 @@ impl Display for Expr {
             Expr::Binary { left, op, right } => format!("{left} {op} {right}"),
             Expr::Unary { op, expr } => format!("{op}{expr}"),
             Expr::Grouping(expr) => format!("({expr})"),
-            Expr::Variable(name) => format!("{name}"),
+            Expr::Variable(name) => name.to_string(),
             Expr::Assign { name, value } => format!("{name} = {value}"),
         };
         write!(f, "{res}")
@@ -150,6 +150,7 @@ pub enum Stmt {
         name: String,
         val: Option<Expr>,
     },
+    Block(Vec<Stmt>),
 }
 
 #[cfg(test)]
