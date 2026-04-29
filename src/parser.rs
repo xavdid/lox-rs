@@ -109,13 +109,44 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
-        if self.next_if(TokenType::Print) {
+        if self.next_if(TokenType::If) {
+            self.parse_if_statement()
+        } else if self.next_if(TokenType::Print) {
             self.parse_print_statement()
         } else if self.next_if(TokenType::LeftBrace) {
             self.parse_block()
         } else {
             self.parse_expression_statement()
         }
+    }
+
+    fn parse_if_statement(&mut self) -> Result<Stmt, ParserError> {
+        if !self.next_if(TokenType::LeftParen) {
+            return Err(ParserError::MissingRParen {
+                token: (*self.peek()).clone(),
+            });
+        }
+
+        let condition = self.parse_expression()?;
+
+        if !self.next_if(TokenType::RightParen) {
+            return Err(ParserError::MissingRParen {
+                token: (*self.peek()).clone(),
+            });
+        }
+
+        let then_branch = self.parse_statement()?.into();
+        let else_branch = if self.next_if(TokenType::Else) {
+            Some(Box::new(self.parse_statement()?))
+        } else {
+            None
+        };
+
+        Ok(Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+        })
     }
 
     fn parse_print_statement(&mut self) -> Result<Stmt, ParserError> {
@@ -915,6 +946,150 @@ mod tests {
                     Stmt::Print(Expr::Literal(Literal::Number(2.0))),
                     Stmt::Print(Expr::Literal(Literal::Number(3.0)))
                 ])]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_if_statements_no_else() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::If,
+                line: 1,
+            },
+            Token {
+                value: TokenType::LeftParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("2".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::RightParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::LeftBrace,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Print,
+                line: 2,
+            },
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 2,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 2,
+            },
+            Token {
+                value: TokenType::RightBrace,
+                line: 3,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 3,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::If {
+                    condition: Expr::Literal(Literal::Number(2.0)),
+                    then_branch: Stmt::Block(vec![Stmt::Print(Expr::Literal(Literal::Number(
+                        3.0
+                    )))])
+                    .into(),
+                    else_branch: None
+                }]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_if_statements_else() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::If,
+                line: 1,
+            },
+            Token {
+                value: TokenType::LeftParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("2".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::RightParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::LeftBrace,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Print,
+                line: 2,
+            },
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 2,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 2,
+            },
+            Token {
+                value: TokenType::RightBrace,
+                line: 3,
+            },
+            Token {
+                value: TokenType::Else,
+                line: 3,
+            },
+            Token {
+                value: TokenType::LeftBrace,
+                line: 3,
+            },
+            Token {
+                value: TokenType::Print,
+                line: 4,
+            },
+            Token {
+                value: TokenType::Number("-1".to_string()),
+                line: 4,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 4,
+            },
+            Token {
+                value: TokenType::RightBrace,
+                line: 5,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 5,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::If {
+                    condition: Expr::Literal(Literal::Number(2.0)),
+                    then_branch: Stmt::Block(vec![Stmt::Print(Expr::Literal(Literal::Number(
+                        3.0
+                    )))])
+                    .into(),
+                    else_branch: Some(
+                        Stmt::Block(vec![Stmt::Print(Expr::Literal(Literal::Number(-1.0)))]).into()
+                    )
+                }]
             })
         )
     }

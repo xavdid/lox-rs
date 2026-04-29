@@ -95,6 +95,17 @@ fn execute(stmt: &Stmt, env: &Environment) -> Result<(), InterpreterError> {
                 execute(s, &subscope)?;
             }
         }
+        Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            if is_truthy(&evaluate(condition, env)?) {
+                execute(then_branch, env)?;
+            } else if let Some(else_branch) = else_branch {
+                execute(else_branch, env)?;
+            }
+        }
     }
 
     Ok(())
@@ -158,12 +169,7 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue, InterpreterError
             match (op, right) {
                 // only numbers can be negated
                 (UnaryOp::Neg, LoxValue::Number(n)) => LoxValue::Number(-n),
-
-                // but everythign has a truthiness
-                (UnaryOp::Not, LoxValue::Boolean(b)) => LoxValue::Boolean(!b),
-                (UnaryOp::Not, LoxValue::Nil) => LoxValue::Boolean(true),
-                // all numbers and strings are truthy
-                (UnaryOp::Not, _) => LoxValue::Boolean(false),
+                (UnaryOp::Not, v) => LoxValue::Boolean(!is_truthy(&v)),
 
                 _ => return Err(InterpreterError::InvalidUnaryExpr(expr.clone())),
             }
@@ -182,6 +188,14 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue, InterpreterError
             }
         }
     })
+}
+
+fn is_truthy(expr: &LoxValue) -> bool {
+    match expr {
+        LoxValue::Number(_) | LoxValue::LString(_) => true,
+        LoxValue::Boolean(b) => *b,
+        LoxValue::Nil => false,
+    }
 }
 
 #[cfg(test)]
@@ -223,6 +237,22 @@ mod tests {
             )),
             Ok(LoxValue::Number(123.456))
         );
+    }
+
+    #[allow(clippy::bool_assert_comparison)]
+    #[test]
+    fn it_tests_truthiness() {
+        assert_eq!(is_truthy(&LoxValue::Nil), false);
+
+        assert_eq!(is_truthy(&LoxValue::Boolean(true)), true);
+        assert_eq!(is_truthy(&LoxValue::Boolean(false)), false);
+
+        assert_eq!(is_truthy(&LoxValue::Number(0.0)), true);
+        assert_eq!(is_truthy(&LoxValue::Number(1.0)), true);
+        assert_eq!(is_truthy(&LoxValue::Number(-1.0)), true);
+
+        assert_eq!(is_truthy(&LoxValue::LString("david".to_string())), true);
+        assert_eq!(is_truthy(&LoxValue::LString("".to_string())), true);
     }
 
     #[test]
@@ -526,6 +556,170 @@ mod tests {
             env.get("name"),
             Some(LoxValue::LString("david".to_string()))
         );
+    }
+
+    #[test]
+    fn it_evaluates_truthy_if_blocks() {
+        // this is how we'll track side effects
+        let env = Environment::new();
+        assert_eq!(
+            execute(
+                &Stmt::Var {
+                    name: "name".to_string(),
+                    val: None
+                },
+                &env
+            ),
+            Ok(())
+        );
+        // not set yet
+        assert_eq!(env.get("name"), Some(LoxValue::Nil));
+
+        assert_eq!(
+            execute(
+                // this declaration happens in a subscope...
+                &Stmt::If {
+                    condition: Expr::Literal(Literal::True),
+                    then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                        name: "name".to_string(),
+                        value: Expr::Literal(Literal::Number(123.0)).into()
+                    })])
+                    .into(),
+                    else_branch: None
+                },
+                &env
+            ),
+            Ok(())
+        );
+
+        // now set!
+        assert_eq!(env.get("name"), Some(LoxValue::Number(123.0)));
+    }
+
+    #[test]
+    fn it_doesnt_evaluate_falsy_if_blocks() {
+        // this is how we'll track side effects
+        let env = Environment::new();
+        assert_eq!(
+            execute(
+                &Stmt::Var {
+                    name: "name".to_string(),
+                    val: None
+                },
+                &env
+            ),
+            Ok(())
+        );
+        // not set yet
+        assert_eq!(env.get("name"), Some(LoxValue::Nil));
+
+        assert_eq!(
+            execute(
+                // this declaration happens in a subscope...
+                &Stmt::If {
+                    condition: Expr::Literal(Literal::False),
+                    then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                        name: "name".to_string(),
+                        value: Expr::Literal(Literal::Number(123.0)).into()
+                    })])
+                    .into(),
+                    else_branch: None
+                },
+                &env
+            ),
+            Ok(())
+        );
+
+        // still not set
+        assert_eq!(env.get("name"), Some(LoxValue::Nil));
+    }
+
+    #[test]
+    fn it_ignores_else_for_truthy_if_blocks() {
+        // this is how we'll track side effects
+        let env = Environment::new();
+        assert_eq!(
+            execute(
+                &Stmt::Var {
+                    name: "name".to_string(),
+                    val: None
+                },
+                &env
+            ),
+            Ok(())
+        );
+        // not set yet
+        assert_eq!(env.get("name"), Some(LoxValue::Nil));
+
+        assert_eq!(
+            execute(
+                // this declaration happens in a subscope...
+                &Stmt::If {
+                    condition: Expr::Literal(Literal::True),
+                    then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                        name: "name".to_string(),
+                        value: Expr::Literal(Literal::Number(123.0)).into()
+                    })])
+                    .into(),
+                    else_branch: Some(
+                        Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                            name: "name".to_string(),
+                            value: Expr::Literal(Literal::Number(456.0)).into()
+                        })])
+                        .into()
+                    )
+                },
+                &env
+            ),
+            Ok(())
+        );
+
+        // now set!
+        assert_eq!(env.get("name"), Some(LoxValue::Number(123.0)));
+    }
+
+    #[test]
+    fn it_evaluates_else_for_falsy_if() {
+        // this is how we'll track side effects
+        let env = Environment::new();
+        assert_eq!(
+            execute(
+                &Stmt::Var {
+                    name: "name".to_string(),
+                    val: None
+                },
+                &env
+            ),
+            Ok(())
+        );
+        // not set yet
+        assert_eq!(env.get("name"), Some(LoxValue::Nil));
+
+        assert_eq!(
+            execute(
+                // this declaration happens in a subscope...
+                &Stmt::If {
+                    condition: Expr::Literal(Literal::False),
+                    then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                        name: "name".to_string(),
+                        value: Expr::Literal(Literal::Number(123.0)).into()
+                    })])
+                    .into(),
+                    else_branch: Some(
+                        Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                            name: "name".to_string(),
+                            value: Expr::Literal(Literal::Number(456.0)).into()
+                        })])
+                        .into()
+                    )
+                },
+                &env
+            ),
+            Ok(())
+        );
+
+        // still not set
+        assert_eq!(env.get("name"), Some(LoxValue::Number(456.0)));
     }
 
     #[test]
