@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::scanner::TokenType;
+use crate::scanner::{Token, TokenType};
 
 #[derive(Debug, PartialEq)]
 pub struct Ast {
@@ -105,6 +105,35 @@ impl Display for BinaryOp {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum LogicalOp {
+    And,
+    Or,
+}
+
+impl From<Token> for LogicalOp {
+    fn from(token: Token) -> Self {
+        match token.value {
+            TokenType::And => LogicalOp::And,
+            TokenType::Or => LogicalOp::Or,
+            _ => panic!(
+                "invalid conversion to logicalop from token: {:?}",
+                token.value
+            ),
+        }
+    }
+}
+
+impl Display for LogicalOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let res = match self {
+            LogicalOp::And => "and",
+            LogicalOp::Or => "or",
+        };
+        write!(f, "{res}")
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     // TODO: store information about where this came from? like line? in the evaluator we just know something is wrong)
     Literal(Literal),
@@ -124,6 +153,11 @@ pub enum Expr {
         name: String,
         value: Box<Expr>,
     },
+    Logical {
+        left: Box<Expr>,
+        op: LogicalOp,
+        right: Box<Expr>,
+    },
 }
 
 impl Display for Expr {
@@ -135,6 +169,7 @@ impl Display for Expr {
             Expr::Grouping(expr) => format!("({expr})"),
             Expr::Variable(name) => name.to_string(),
             Expr::Assign { name, value } => format!("{name} = {value}"),
+            Expr::Logical { left, op, right } => format!("{left} {op} {right}"),
         };
         write!(f, "{res}")
     }

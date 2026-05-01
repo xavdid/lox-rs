@@ -23,7 +23,6 @@ impl Display for LoxValue {
     }
 }
 
-#[allow(clippy::enum_variant_names)] // unless we never get an invalid thing?
 #[derive(Debug, PartialEq)]
 pub enum InterpreterError {
     InvalidUnaryExpr(Expr),
@@ -185,6 +184,16 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue, InterpreterError
             match env.assign(name, val) {
                 Some(val) => val,
                 None => return Err(InterpreterError::UndefinedVariable(expr.clone())),
+            }
+        }
+        Expr::Logical { left, op, right } => {
+            let left = evaluate(left, env)?;
+
+            match op {
+                // short circuit logic - only evaluate right if we can reach it
+                LogicalOp::Or if is_truthy(&left) => return Ok(left),
+                LogicalOp::And if !is_truthy(&left) => return Ok(left),
+                _ => evaluate(right, env)?,
             }
         }
     })
@@ -473,6 +482,120 @@ mod tests {
                 op: Eq,
                 right: Literal(Nil).into()
             }),
+            Ok(LoxValue::Boolean(true))
+        );
+    }
+
+    #[test]
+    fn it_evaulates_logical_or_truthy() {
+        let env = Environment::new();
+
+        assert_eq!(
+            evaluate(
+                &Expr::Logical {
+                    left: Expr::Literal(Literal::Number(1.0)).into(),
+                    op: LogicalOp::Or,
+                    right: Expr::Literal(Literal::Number(2.0)).into()
+                },
+                &env
+            ),
+            Ok(LoxValue::Number(1.0))
+        );
+    }
+
+    #[test]
+    fn it_evaulates_logical_or_falsy() {
+        let env = Environment::new();
+
+        assert_eq!(
+            evaluate(
+                &Expr::Logical {
+                    left: Expr::Literal(Literal::Nil).into(),
+                    op: LogicalOp::Or,
+                    right: Expr::Literal(Literal::Number(2.0)).into()
+                },
+                &env
+            ),
+            Ok(LoxValue::Number(2.0))
+        );
+    }
+
+    #[test]
+    fn it_evaulates_logical_and_truthy() {
+        let env = Environment::new();
+
+        assert_eq!(
+            evaluate(
+                &Expr::Logical {
+                    left: Expr::Literal(Literal::Number(1.0)).into(),
+                    op: LogicalOp::And,
+                    right: Expr::Literal(Literal::Number(2.0)).into()
+                },
+                &env
+            ),
+            Ok(LoxValue::Number(2.0))
+        );
+    }
+
+    #[test]
+    fn it_evaulates_logical_and_falsy() {
+        let env = Environment::new();
+
+        assert_eq!(
+            evaluate(
+                &Expr::Logical {
+                    left: Expr::Literal(Literal::Nil).into(),
+                    op: LogicalOp::And,
+                    right: Expr::Literal(Literal::Number(2.0)).into()
+                },
+                &env
+            ),
+            Ok(LoxValue::Nil)
+        );
+    }
+
+    #[test]
+    fn it_short_circuits_and() {
+        let env = Environment::new();
+
+        assert_eq!(
+            evaluate(
+                &Expr::Logical {
+                    left: Expr::Literal(Literal::Nil).into(),
+                    op: LogicalOp::And,
+                    // this would be an error if evaluated
+                    right: Expr::Binary {
+                        left: Expr::Literal(Literal::Nil).into(),
+                        op: BinaryOp::Add,
+                        right: Expr::Literal(Literal::Nil).into()
+                    }
+                    .into()
+                },
+                &env
+            ),
+            Ok(LoxValue::Nil)
+        );
+    }
+
+    #[test]
+    fn it_short_circuits_or() {
+        let env = Environment::new();
+
+        assert_eq!(
+            evaluate(
+                &Expr::Logical {
+                    left: Expr::Literal(Literal::True).into(),
+                    op: LogicalOp::Or,
+                    // this would be an error if evaluated
+                    right: Expr::Binary {
+                        left: Expr::Literal(Literal::Nil).into(),
+                        op: BinaryOp::Add,
+                        right: Expr::Literal(Literal::Nil).into()
+                    }
+                    .into()
+                },
+                &env
+            ),
             Ok(LoxValue::Boolean(true))
         );
     }

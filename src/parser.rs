@@ -192,7 +192,7 @@ impl Parser {
     }
 
     fn parse_assignment(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_equality()?;
+        let expr = self.parse_logical_or()?;
 
         if self.next_if(TokenType::Equal) {
             let equals_token = self.previous();
@@ -206,6 +206,37 @@ impl Parser {
                 }),
                 _ => Err(ParserError::InvalidAssignmentTarget { token }),
             };
+        }
+
+        Ok(expr)
+    }
+
+    fn parse_logical_or(&mut self) -> Result<Expr, ParserError> {
+        let mut expr = self.parse_logical_and()?;
+        while self.next_if(TokenType::Or) {
+            let op = self.previous().clone().into();
+            let right = self.parse_logical_and()?.into();
+            expr = Expr::Logical {
+                left: expr.into(),
+                op,
+                right,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn parse_logical_and(&mut self) -> Result<Expr, ParserError> {
+        let mut expr = self.parse_equality()?;
+
+        while self.next_if(TokenType::And) {
+            let op = self.previous().clone().into();
+            let right = self.parse_equality()?.into();
+            expr = Expr::Logical {
+                left: expr.into(),
+                op,
+                right,
+            }
         }
 
         Ok(expr)
@@ -1339,6 +1370,140 @@ mod tests {
                 statements: vec![Stmt::Expression(Expr::Unary {
                     op: UnaryOp::Neg,
                     expr: Expr::Variable("name".to_string()).into()
+                })]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_logical_or() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::String("name".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Or,
+                line: 1,
+            },
+            Token {
+                value: TokenType::String("age".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Expression(Expr::Logical {
+                    left: Expr::Literal(Literal::String("name".to_string())).into(),
+                    op: LogicalOp::Or,
+                    right: Expr::Literal(Literal::String("age".to_string())).into()
+                })]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_logical_and() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Number("123".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::And,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("456".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Expression(Expr::Logical {
+                    left: Expr::Literal(Literal::Number(123.0)).into(),
+                    op: LogicalOp::And,
+                    right: Expr::Literal(Literal::Number(456.0)).into()
+                })]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_nested_logical_operators() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::Number("123".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::And,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("456".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::And,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("789".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Or,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("890".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 1,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Expression(Expr::Logical {
+                    left: Expr::Logical {
+                        left: Expr::Logical {
+                            left: Expr::Literal(Literal::Number(123.0)).into(),
+                            op: LogicalOp::And,
+                            right: Expr::Literal(Literal::Number(456.0)).into()
+                        }
+                        .into(),
+                        op: LogicalOp::And,
+                        right: Expr::Literal(Literal::Number(789.0)).into()
+                    }
+                    .into(),
+                    op: LogicalOp::Or,
+                    right: Expr::Literal(Literal::Number(890.0)).into()
                 })]
             })
         )
