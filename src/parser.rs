@@ -109,7 +109,9 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
-        if self.next_if(TokenType::If) {
+        if self.next_if(TokenType::For) {
+            self.parse_for_statement()
+        } else if self.next_if(TokenType::If) {
             self.parse_if_statement()
         } else if self.next_if(TokenType::Print) {
             self.parse_print_statement()
@@ -120,6 +122,94 @@ impl Parser {
         } else {
             self.parse_expression_statement()
         }
+    }
+
+    fn parse_for_statement(&mut self) -> Result<Stmt, ParserError> {
+        if !self.next_if(TokenType::LeftParen) {
+            return Err(ParserError::MissingRParen {
+                token: (*self.peek()).clone(),
+            });
+        }
+
+        let initializer: Option<Stmt> = if self.next_if(TokenType::Semicolon) {
+            None
+        } else if self.next_if(TokenType::Var) {
+            Some(self.parse_var_declaration()?)
+        } else {
+            Some(self.parse_expression_statement()?)
+        };
+
+        // we parse an expression if present
+        let condition = if matches!(self.peek().value, TokenType::Semicolon) {
+            None
+        } else {
+            Some(self.parse_expression()?)
+        };
+
+        // but always must end this section with a semicolon
+        if !self.next_if(TokenType::Semicolon) {
+            return Err(ParserError::MissingSemiColon {
+                token: (*self.peek()).clone(),
+            });
+        };
+
+        // we parse an expression if present
+        let increment = if matches!(self.peek().value, TokenType::RightParen) {
+            None
+        } else {
+            Some(self.parse_expression()?)
+        };
+
+        // but always must end this section with a right paren
+        if !self.next_if(TokenType::RightParen) {
+            return Err(ParserError::MissingSemiColon {
+                token: (*self.peek()).clone(),
+            });
+        };
+
+        let mut body = self.parse_statement()?;
+
+        // now we turn the bits of the for loop into code around the original body.
+
+        // for (var i = 0; i < 10; i = i + 1) {
+        //      ^A         ^B      ^C
+        //   print i;
+        //   ^D
+        // }
+
+        // becomes:
+
+        // {
+        //   var i = 0; // A
+        //   while (i < 10) { // B
+        //     print i; // D
+        //     i = i + 1; // C
+        //   }
+        // }
+
+        // which are equivalent
+
+        // C: if there's an increment, put it after the original body
+        if let Some(increment) = increment {
+            body = Stmt::Block(vec![body, Stmt::Expression(increment)]);
+        };
+
+        // B
+        body = Stmt::While {
+            condition: match condition {
+                Some(c) => c,
+                // if there's no condition, then it's a `while(true)`
+                None => Expr::Literal(Literal::True),
+            },
+            body: body.into(),
+        };
+
+        // A
+        if let Some(initializer) = initializer {
+            body = Stmt::Block(vec![initializer, body])
+        }
+
+        Ok(body)
     }
 
     fn parse_if_statement(&mut self) -> Result<Stmt, ParserError> {
@@ -463,6 +553,11 @@ mod tests {
     use crate::ast::*;
 
     use super::*;
+
+    /** helper for more legible token-heavy tests  */
+    fn token(value: TokenType) -> Token {
+        Token { value, line: 1 }
+    }
 
     #[test]
     fn it_parses_basic_nil() {
@@ -1302,6 +1397,260 @@ mod tests {
                     line: 1
                 }
             }
+        )
+    }
+
+    #[test]
+    fn it_parses_full_for_statements() {
+        let parser = Parser::new(vec![
+            token(TokenType::For),
+            token(TokenType::LeftParen),
+            token(TokenType::Var),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Equal),
+            token(TokenType::Number("0".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::LessThan),
+            token(TokenType::Number("5".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Equal),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Plus),
+            token(TokenType::Number("1".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::LeftBrace),
+            token(TokenType::Print),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::RightBrace),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                // {
+                //   var i = 0; // A
+                //   while (i < 10) { // B
+                //     print i; // D
+                //     i = i + 1; // C
+                //   }
+                // }
+                statements: vec![Stmt::Block(vec![
+                    Stmt::Var {
+                        name: "i".to_string(),
+                        val: Some(Expr::Literal(Literal::Number(0.0)))
+                    },
+                    Stmt::While {
+                        condition: Expr::Binary {
+                            left: Expr::Variable("i".to_string()).into(),
+                            op: BinaryOp::Lt,
+                            right: Expr::Literal(Literal::Number(5.0)).into()
+                        },
+                        body: Stmt::Block(vec![
+                            Stmt::Block(vec![Stmt::Print(Expr::Variable("i".to_string()))]),
+                            Stmt::Expression(Expr::Assign {
+                                name: "i".to_string(),
+                                value: Expr::Binary {
+                                    left: Expr::Variable("i".to_string()).into(),
+                                    op: BinaryOp::Add,
+                                    right: Expr::Literal(Literal::Number(1.0)).into()
+                                }
+                                .into()
+                            })
+                        ])
+                        .into(),
+                    }
+                ])]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_for_statements_no_condition() {
+        let parser = Parser::new(vec![
+            token(TokenType::For),
+            token(TokenType::LeftParen),
+            token(TokenType::Var),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Equal),
+            token(TokenType::Number("0".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Semicolon),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Equal),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Plus),
+            token(TokenType::Number("1".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::LeftBrace),
+            token(TokenType::Print),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::RightBrace),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Block(vec![
+                    Stmt::Var {
+                        name: "i".to_string(),
+                        val: Some(Expr::Literal(Literal::Number(0.0)))
+                    },
+                    Stmt::While {
+                        condition: Expr::Literal(Literal::True),
+                        body: Stmt::Block(vec![
+                            Stmt::Block(vec![Stmt::Print(Expr::Variable("i".to_string()))]),
+                            Stmt::Expression(Expr::Assign {
+                                name: "i".to_string(),
+                                value: Expr::Binary {
+                                    left: Expr::Variable("i".to_string()).into(),
+                                    op: BinaryOp::Add,
+                                    right: Expr::Literal(Literal::Number(1.0)).into()
+                                }
+                                .into()
+                            })
+                        ])
+                        .into(),
+                    }
+                ])]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_for_statements_no_increment() {
+        let parser = Parser::new(vec![
+            token(TokenType::For),
+            token(TokenType::LeftParen),
+            token(TokenType::Var),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Equal),
+            token(TokenType::Number("0".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::LessThan),
+            token(TokenType::Number("5".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::RightParen),
+            token(TokenType::LeftBrace),
+            token(TokenType::Print),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::RightBrace),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::Block(vec![
+                    Stmt::Var {
+                        name: "i".to_string(),
+                        val: Some(Expr::Literal(Literal::Number(0.0)))
+                    },
+                    Stmt::While {
+                        condition: Expr::Binary {
+                            left: Expr::Variable("i".to_string()).into(),
+                            op: BinaryOp::Lt,
+                            right: Expr::Literal(Literal::Number(5.0)).into()
+                        },
+                        body: Stmt::Block(vec![Stmt::Print(Expr::Variable("i".to_string()))])
+                            .into(),
+                    }
+                ])]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_for_statement_no_initializer() {
+        let parser = Parser::new(vec![
+            token(TokenType::For),
+            token(TokenType::LeftParen),
+            token(TokenType::Semicolon),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::LessThan),
+            token(TokenType::Number("5".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Equal),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Plus),
+            token(TokenType::Number("1".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::LeftBrace),
+            token(TokenType::Print),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::RightBrace),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                // {
+                //   var i = 0; // A
+                //   while (i < 10) { // B
+                //     print i; // D
+                //     i = i + 1; // C
+                //   }
+                // }
+                statements: vec![Stmt::While {
+                    condition: Expr::Binary {
+                        left: Expr::Variable("i".to_string()).into(),
+                        op: BinaryOp::Lt,
+                        right: Expr::Literal(Literal::Number(5.0)).into()
+                    },
+                    body: Stmt::Block(vec![
+                        Stmt::Block(vec![Stmt::Print(Expr::Variable("i".to_string()))]),
+                        Stmt::Expression(Expr::Assign {
+                            name: "i".to_string(),
+                            value: Expr::Binary {
+                                left: Expr::Variable("i".to_string()).into(),
+                                op: BinaryOp::Add,
+                                right: Expr::Literal(Literal::Number(1.0)).into()
+                            }
+                            .into()
+                        })
+                    ])
+                    .into(),
+                }]
+            })
+        )
+    }
+
+    #[test]
+    fn it_parses_minimal_for_statements() {
+        let parser = Parser::new(vec![
+            token(TokenType::For),
+            token(TokenType::LeftParen),
+            token(TokenType::Semicolon),
+            token(TokenType::Semicolon),
+            token(TokenType::RightParen),
+            token(TokenType::LeftBrace),
+            token(TokenType::Print),
+            token(TokenType::Identifier("i".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::RightBrace),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                // {
+                //   var i = 0; // A
+                //   while (i < 10) { // B
+                //     print i; // D
+                //     i = i + 1; // C
+                //   }
+                // }
+                statements: vec![Stmt::While {
+                    condition: Expr::Literal(Literal::True),
+                    body: Stmt::Block(vec![Stmt::Print(Expr::Variable("i".to_string()))]).into(),
+                }]
+            })
         )
     }
 

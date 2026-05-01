@@ -19,11 +19,8 @@ fn main() {
         RunMode::Source(path) => match run_file(&path) {
             Ok(_) => {}
             Err(e) => {
-                eprintln!("{e}");
-                // match e {
-                //     lox_rs::LoxError::Reader(error) => eprintln!("{error:?}"),
-                //     lox_rs::LoxError::Scanner(message) => eprintln!("{message}"),
-                // };
+                eprintln!("Error running program \"{path}\"");
+                eprintln!("--> {e}");
                 exit(1);
             }
         },
