@@ -562,18 +562,9 @@ mod tests {
     #[test]
     fn it_parses_basic_nil() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Nil,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Nil),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -586,18 +577,9 @@ mod tests {
     #[test]
     fn it_parses_basic_bool() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::False,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::False),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -610,18 +592,9 @@ mod tests {
     #[test]
     fn it_parses_basic_string() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::String("cool".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::String("cool".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -636,18 +609,9 @@ mod tests {
     #[test]
     fn it_parses_basic_int() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Number("123".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Number("123".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -660,18 +624,9 @@ mod tests {
     #[test]
     fn it_parses_basic_float() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Number("123.456".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Number("123.456".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -684,26 +639,11 @@ mod tests {
     #[test]
     fn it_parses_basic_grouping() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::LeftParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::True,
-                line: 1,
-            },
-            Token {
-                value: TokenType::RightParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::LeftParen),
+            token(TokenType::True),
+            token(TokenType::RightParen),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -718,22 +658,10 @@ mod tests {
     #[test]
     fn it_parses_basic_unary() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Minus,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("3".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Minus),
+            token(TokenType::Number("3".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -749,26 +677,11 @@ mod tests {
     #[test]
     fn it_parses_basic_binary() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Number("1".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Slash,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("2".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Number("1".to_string())),
+            token(TokenType::Slash),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -785,42 +698,15 @@ mod tests {
     #[test]
     fn it_parses_flat_nested_binary() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Number("1".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Plus,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("2".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Plus,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("3".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Minus,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("4".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Number("1".to_string())),
+            token(TokenType::Plus),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::Plus),
+            token(TokenType::Number("3".to_string())),
+            token(TokenType::Minus),
+            token(TokenType::Number("4".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -847,26 +733,11 @@ mod tests {
     #[test]
     fn it_parses_nested_unary() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Bang,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Bang,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("2".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Bang),
+            token(TokenType::Bang),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -886,42 +757,15 @@ mod tests {
     #[test]
     fn it_parses_nested_binary() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Number("3".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Star,
-                line: 1,
-            },
-            Token {
-                value: TokenType::LeftParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("2".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Slash,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("4".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::RightParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Number("3".to_string())),
+            token(TokenType::Star),
+            token(TokenType::LeftParen),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::Slash),
+            token(TokenType::Number("4".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -946,50 +790,17 @@ mod tests {
     #[test]
     fn it_mixes_unary_and_binary() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Minus,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("3".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::LessThanEqual,
-                line: 1,
-            },
-            Token {
-                value: TokenType::LeftParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::String("neat".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::EqualEqual,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Bang,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Nil,
-                line: 1,
-            },
-            Token {
-                value: TokenType::RightParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Minus),
+            token(TokenType::Number("3".to_string())),
+            token(TokenType::LessThanEqual),
+            token(TokenType::LeftParen),
+            token(TokenType::String("neat".to_string())),
+            token(TokenType::EqualEqual),
+            token(TokenType::Bang),
+            token(TokenType::Nil),
+            token(TokenType::RightParen),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -1022,22 +833,10 @@ mod tests {
     #[test]
     fn it_parses_print_statements() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Print,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("3".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Print),
+            token(TokenType::Number("3".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -1050,42 +849,15 @@ mod tests {
     #[test]
     fn it_parses_block_statements() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::LeftBrace,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Print,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("2".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Print,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("3".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::RightBrace,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::LeftBrace),
+            token(TokenType::Print),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Print),
+            token(TokenType::Number("3".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::RightBrace),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -1101,26 +873,11 @@ mod tests {
     #[test]
     fn it_parses_if_statements_no_else() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::If,
-                line: 1,
-            },
-            Token {
-                value: TokenType::LeftParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("2".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::RightParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::LeftBrace,
-                line: 1,
-            },
+            token(TokenType::If),
+            token(TokenType::LeftParen),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::LeftBrace),
             Token {
                 value: TokenType::Print,
                 line: 2,
@@ -1160,26 +917,11 @@ mod tests {
     #[test]
     fn it_parses_if_statements_else() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::If,
-                line: 1,
-            },
-            Token {
-                value: TokenType::LeftParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("2".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::RightParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::LeftBrace,
-                line: 1,
-            },
+            token(TokenType::If),
+            token(TokenType::LeftParen),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::LeftBrace),
             Token {
                 value: TokenType::Print,
                 line: 2,
@@ -1245,38 +987,14 @@ mod tests {
     #[test]
     fn it_fails_on_bad_block_statements() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::LeftBrace,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Print,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("2".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Print,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("3".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::LeftBrace),
+            token(TokenType::Print),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Print),
+            token(TokenType::Number("3".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
 
         let res = parser.parse().unwrap_err();
@@ -1284,10 +1002,7 @@ mod tests {
         assert_eq!(
             res.first().unwrap(),
             &ParserError::MissingRParen {
-                token: Token {
-                    value: TokenType::Eof,
-                    line: 1
-                }
+                token: token(TokenType::Eof),
             }
         );
     }
@@ -1295,26 +1010,11 @@ mod tests {
     #[test]
     fn it_parses_while_statements() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::While,
-                line: 1,
-            },
-            Token {
-                value: TokenType::LeftParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("2".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::RightParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::LeftBrace,
-                line: 1,
-            },
+            token(TokenType::While),
+            token(TokenType::LeftParen),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::LeftBrace),
             Token {
                 value: TokenType::Print,
                 line: 2,
@@ -1351,22 +1051,10 @@ mod tests {
     #[test]
     fn it_fails_bad_while_statements() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::While,
-                line: 1,
-            },
-            Token {
-                value: TokenType::LeftParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("2".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::LeftBrace,
-                line: 1,
-            },
+            token(TokenType::While),
+            token(TokenType::LeftParen),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::LeftBrace),
             Token {
                 value: TokenType::Print,
                 line: 2,
@@ -1392,10 +1080,7 @@ mod tests {
         assert_eq!(
             res.first().unwrap(),
             &ParserError::MissingRParen {
-                token: Token {
-                    value: TokenType::LeftBrace,
-                    line: 1
-                }
+                token: token(TokenType::LeftBrace),
             }
         )
     }
@@ -1657,30 +1342,12 @@ mod tests {
     #[test]
     fn it_parses_var_declarations_with_values() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Var,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Identifier("name".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Equal,
-                line: 1,
-            },
-            Token {
-                value: TokenType::String("david".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Var),
+            token(TokenType::Identifier("name".to_string())),
+            token(TokenType::Equal),
+            token(TokenType::String("david".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -1696,54 +1363,18 @@ mod tests {
     #[test]
     fn it_parses_var_declarations_with_complex_values() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Var,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Identifier("name".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Equal,
-                line: 1,
-            },
-            Token {
-                value: TokenType::LeftParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("1".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Plus,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("2".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::RightParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Star,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("3".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Var),
+            token(TokenType::Identifier("name".to_string())),
+            token(TokenType::Equal),
+            token(TokenType::LeftParen),
+            token(TokenType::Number("1".to_string())),
+            token(TokenType::Plus),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::Star),
+            token(TokenType::Number("3".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -1771,22 +1402,10 @@ mod tests {
     #[test]
     fn it_parses_empty_var_declarations() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Var,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Identifier("name".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Var),
+            token(TokenType::Identifier("name".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -1802,18 +1421,9 @@ mod tests {
     #[test]
     fn it_parses_var_access() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Identifier("name".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Identifier("name".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -1826,22 +1436,10 @@ mod tests {
     #[test]
     fn it_parses_nested_var_access() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Minus,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Identifier("name".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Minus),
+            token(TokenType::Identifier("name".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -1857,26 +1455,11 @@ mod tests {
     #[test]
     fn it_parses_logical_or() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::String("name".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Or,
-                line: 1,
-            },
-            Token {
-                value: TokenType::String("age".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::String("name".to_string())),
+            token(TokenType::Or),
+            token(TokenType::String("age".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -1893,26 +1476,11 @@ mod tests {
     #[test]
     fn it_parses_logical_and() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Number("123".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::And,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("456".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Number("123".to_string())),
+            token(TokenType::And),
+            token(TokenType::Number("456".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -1929,42 +1497,15 @@ mod tests {
     #[test]
     fn it_parses_nested_logical_operators() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Number("123".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::And,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("456".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::And,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("789".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Or,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("890".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Number("123".to_string())),
+            token(TokenType::And),
+            token(TokenType::Number("456".to_string())),
+            token(TokenType::And),
+            token(TokenType::Number("789".to_string())),
+            token(TokenType::Or),
+            token(TokenType::Number("890".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         assert_eq!(
             parser.parse(),
@@ -1991,32 +1532,17 @@ mod tests {
     #[test]
     fn it_fails_for_broken_grouping() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::LeftParen,
-                line: 1,
-            },
-            Token {
-                value: TokenType::True,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::LeftParen),
+            token(TokenType::True),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         let res = parser.parse().unwrap_err();
         assert_eq!(res.len(), 1);
         assert_eq!(
             res.first().unwrap(),
             &ParserError::MissingRParen {
-                token: Token {
-                    value: TokenType::Semicolon,
-                    line: 1
-                }
+                token: token(TokenType::Semicolon),
             }
         )
     }
@@ -2024,28 +1550,16 @@ mod tests {
     #[test]
     fn it_fails_for_missing_semi_in_print() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Print,
-                line: 1,
-            },
-            Token {
-                value: TokenType::True,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Print),
+            token(TokenType::True),
+            token(TokenType::Eof),
         ]);
         let res = parser.parse().unwrap_err();
         assert_eq!(res.len(), 1);
         assert_eq!(
             res.first().unwrap(),
             &ParserError::MissingSemiColon {
-                token: Token {
-                    value: TokenType::Eof,
-                    line: 1
-                }
+                token: token(TokenType::Eof),
             }
         )
     }
@@ -2053,36 +1567,18 @@ mod tests {
     #[test]
     fn it_fails_for_invalid_assignment() {
         let parser = Parser::new(vec![
-            Token {
-                value: TokenType::Number("3".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Equal,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Number("5".to_string()),
-                line: 1,
-            },
-            Token {
-                value: TokenType::Semicolon,
-                line: 1,
-            },
-            Token {
-                value: TokenType::Eof,
-                line: 1,
-            },
+            token(TokenType::Number("3".to_string())),
+            token(TokenType::Equal),
+            token(TokenType::Number("5".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
         ]);
         let res = parser.parse().unwrap_err();
         assert_eq!(res.len(), 1);
         assert_eq!(
             res.first().unwrap(),
             &ParserError::InvalidAssignmentTarget {
-                token: Token {
-                    value: TokenType::Equal,
-                    line: 1
-                }
+                token: token(TokenType::Equal),
             }
         )
     }
