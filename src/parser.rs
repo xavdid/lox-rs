@@ -113,6 +113,8 @@ impl Parser {
             self.parse_if_statement()
         } else if self.next_if(TokenType::Print) {
             self.parse_print_statement()
+        } else if self.next_if(TokenType::While) {
+            self.print_while_statement()
         } else if self.next_if(TokenType::LeftBrace) {
             self.parse_block()
         } else {
@@ -158,6 +160,26 @@ impl Parser {
                 token: (*self.peek()).clone(),
             })
         }
+    }
+
+    fn print_while_statement(&mut self) -> Result<Stmt, ParserError> {
+        if !self.next_if(TokenType::LeftParen) {
+            return Err(ParserError::MissingRParen {
+                token: (*self.peek()).clone(),
+            });
+        }
+
+        let condition = self.parse_expression()?;
+
+        if !self.next_if(TokenType::RightParen) {
+            return Err(ParserError::MissingRParen {
+                token: (*self.peek()).clone(),
+            });
+        }
+
+        let body = self.parse_statement()?.into();
+
+        Ok(Stmt::While { condition, body })
     }
 
     fn parse_block(&mut self) -> Result<Stmt, ParserError> {
@@ -1173,6 +1195,114 @@ mod tests {
                 }
             }
         );
+    }
+
+    #[test]
+    fn it_parses_while_statements() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::While,
+                line: 1,
+            },
+            Token {
+                value: TokenType::LeftParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("2".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::RightParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::LeftBrace,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Print,
+                line: 2,
+            },
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 2,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 2,
+            },
+            Token {
+                value: TokenType::RightBrace,
+                line: 3,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 3,
+            },
+        ]);
+        assert_eq!(
+            parser.parse(),
+            Ok(Ast {
+                statements: vec![Stmt::While {
+                    condition: Expr::Literal(Literal::Number(2.0)),
+                    body: Stmt::Block(vec![Stmt::Print(Expr::Literal(Literal::Number(3.0)))])
+                        .into(),
+                }]
+            })
+        )
+    }
+
+    #[test]
+    fn it_fails_bad_while_statements() {
+        let parser = Parser::new(vec![
+            Token {
+                value: TokenType::While,
+                line: 1,
+            },
+            Token {
+                value: TokenType::LeftParen,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Number("2".to_string()),
+                line: 1,
+            },
+            Token {
+                value: TokenType::LeftBrace,
+                line: 1,
+            },
+            Token {
+                value: TokenType::Print,
+                line: 2,
+            },
+            Token {
+                value: TokenType::Number("3".to_string()),
+                line: 2,
+            },
+            Token {
+                value: TokenType::Semicolon,
+                line: 2,
+            },
+            Token {
+                value: TokenType::RightBrace,
+                line: 3,
+            },
+            Token {
+                value: TokenType::Eof,
+                line: 3,
+            },
+        ]);
+        let res = parser.parse().unwrap_err();
+        assert_eq!(
+            res.first().unwrap(),
+            &ParserError::MissingRParen {
+                token: Token {
+                    value: TokenType::LeftBrace,
+                    line: 1
+                }
+            }
+        )
     }
 
     #[test]

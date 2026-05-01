@@ -105,6 +105,11 @@ fn execute(stmt: &Stmt, env: &Environment) -> Result<(), InterpreterError> {
                 execute(else_branch, env)?;
             }
         }
+        Stmt::While { condition, body } => {
+            while is_truthy(&evaluate(condition, env)?) {
+                execute(body, env)?
+            }
+        }
     }
 
     Ok(())
@@ -843,6 +848,41 @@ mod tests {
 
         // still not set
         assert_eq!(env.get("name"), Some(LoxValue::Number(456.0)));
+    }
+
+    #[test]
+    fn it_evaluates_while_loops() {
+        // this is how we'll track side effects
+        let env = Environment::new();
+        env.define("num", LoxValue::Number(1.0));
+
+        assert_eq!(
+            execute(
+                // this declaration happens in a subscope...
+                &Stmt::While {
+                    condition: Expr::Binary {
+                        left: Expr::Variable("num".to_string()).into(),
+                        op: BinaryOp::Lte,
+                        right: Expr::Literal(Literal::Number(3.0)).into()
+                    },
+                    body: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                        name: "num".to_string(),
+                        value: Expr::Binary {
+                            left: Expr::Variable("num".to_string()).into(),
+                            op: BinaryOp::Add,
+                            right: Expr::Literal(Literal::Number(1.0)).into()
+                        }
+                        .into()
+                    })])
+                    .into(),
+                },
+                &env
+            ),
+            Ok(())
+        );
+
+        // still not set
+        assert_eq!(env.get("num"), Some(LoxValue::Number(4.0)));
     }
 
     #[test]
