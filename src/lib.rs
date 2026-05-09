@@ -4,11 +4,13 @@ use std::{
     process::exit,
 };
 
+use anyhow::{Result, anyhow};
+
 use crate::{
     interpreter::{InterpreterError, interpret},
     parser::{ParserError, parse},
     reader::{Source, read_source},
-    scanner::{ScannerError, tokenize},
+    scanner::tokenize,
 };
 
 mod ast;
@@ -44,17 +46,12 @@ impl From<io::Error> for LoxError {
         LoxError::Reader(value.to_string())
     }
 }
-
-impl From<Vec<ScannerError>> for LoxError {
-    fn from(value: Vec<ScannerError>) -> Self {
-        LoxError::Scanner(
-            value
-                .iter()
-                .map(|e| format!("Scanner err: {e}\n"))
-                .collect(),
-        )
+impl From<LoxError> for anyhow::Error {
+    fn from(value: LoxError) -> Self {
+        anyhow!(value)
     }
 }
+
 impl From<Vec<ParserError>> for LoxError {
     fn from(value: Vec<ParserError>) -> Self {
         LoxError::Parser(value.iter().map(|e| format!("\n{e}")).collect())
@@ -66,7 +63,7 @@ impl From<InterpreterError> for LoxError {
     }
 }
 
-pub fn run_file(file_path: &str) -> Result<(), LoxError> {
+pub fn run_file(file_path: &str) -> Result<()> {
     let source = read_source(file_path)?;
     run(&source)
 }
@@ -101,11 +98,11 @@ pub fn run_repl() -> ! {
     }
 }
 
-pub fn run(input: &Source) -> Result<(), LoxError> {
+pub fn run(input: &Source) -> Result<()> {
     // this is the core of the interpreter
     let tokens = tokenize(input)?;
-    let ast = parse(tokens)?;
-    interpret(ast)?;
+    let ast = parse(tokens).unwrap(); // TODO: Fix
+    interpret(ast).unwrap(); // TODO: Fix
 
     Ok(())
 }

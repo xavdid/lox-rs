@@ -1,3 +1,4 @@
+use anyhow::{Result, anyhow};
 use std::{fmt::Display, iter, vec};
 
 use crate::reader::Source;
@@ -73,34 +74,10 @@ impl Display for Token {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum ScannerError {
-    UnexpectedCharacter { c: char, line: usize },
-    UnterminatedString { line: usize },
-    MissingDecimals { val: String, line: usize },
-    // InvalidOperator { s: String, line: usize },
-}
-
-impl Display for ScannerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ScannerError::UnexpectedCharacter { c, line } => {
-                write!(f, "[line: {line}] Unexpected character \"{c}\".")
-            }
-            ScannerError::UnterminatedString { line } => {
-                write!(f, "[line: {line}] Unterminated string started.")
-            }
-            ScannerError::MissingDecimals { val, line } => {
-                write!(f, "[line: {line}] Got float with no decimals: '{val}'")
-            }
-        }
-    }
-}
-
 pub struct Scanner<'a> {
     chars: std::iter::Peekable<std::str::Chars<'a>>,
     tokens: Vec<Token>,
-    errors: Vec<ScannerError>,
+    errors: Vec<anyhow::Error>,
     line: usize,
 }
 
@@ -114,7 +91,7 @@ impl Scanner<'_> {
         }
     }
 
-    fn scan_tokens(mut self) -> Result<Tokens, Vec<ScannerError>> {
+    fn scan_tokens(mut self) -> Result<Tokens, Vec<anyhow::Error>> {
         while let Some(c) = self.chars.next() {
             match c {
                 '(' => self.add_token(TokenType::LeftParen),
@@ -182,8 +159,7 @@ impl Scanner<'_> {
                 ' ' | '\r' | '\t' => {}
                 '\n' => self.line += 1,
                 _ => {
-                    self.errors
-                        .push(ScannerError::UnexpectedCharacter { c, line: self.line });
+                    self.new_err(&format!("Unexpected character \"{c}\"."));
                 }
             }
         }
@@ -248,10 +224,7 @@ impl Scanner<'_> {
                 let separator = self.chars.next().unwrap(); // consume the `.`
                 val.push_str(&self.take_digits(separator)); // but include it in the result
                 if val.ends_with('.') {
-                    self.errors.push(ScannerError::MissingDecimals {
-                        val,
-                        line: self.line,
-                    });
+                    self.new_err(&format!("Got float with no decimals: '{val}'"));
                 } else {
                     self.add_token(TokenType::Number(val));
                 }
@@ -280,10 +253,12 @@ impl Scanner<'_> {
             Some(_) => panic!(
                 "ended a string on neither a doublequote or the end of the stream?? Shouldn't happen"
             ),
-            None => self
-                .errors
-                .push(ScannerError::UnterminatedString { line: self.line }),
+            None => self.new_err(&format!("Unterminated string started")),
         };
+    }
+
+    fn new_err(&mut self, msg: &str) {
+        self.errors.push(anyhow!("[line: {}] {msg}", self.line))
     }
 }
 
@@ -291,21 +266,44 @@ fn is_ident(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '_'
 }
 
-pub fn tokenize(source: &Source) -> Result<Tokens, Vec<ScannerError>> {
-    Scanner::new(source).scan_tokens()
+pub fn tokenize(source: &Source) -> Result<Tokens> {
+    match Scanner::new(source).scan_tokens() {
+        Ok(t) => Ok(t),
+        Err(errors) => {
+            let joined: String = errors
+                .iter()
+                .map(|e| format!("Scanner err: {e}\n"))
+                .collect();
+
+            Err(anyhow!(joined))
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn get_result(text: &str) -> Tokens {
+        Scanner::new(&Source {
+            text: text.to_string(),
+        })
+        .scan_tokens()
+        .expect("success method expects success")
+    }
+    fn get_errors(text: &str) -> Vec<anyhow::Error> {
+        Scanner::new(&Source {
+            text: text.to_string(),
+        })
+        .scan_tokens()
+        .expect_err("errors method expects errors")
+    }
+
     #[test]
     fn it_works() {
         assert_eq!(
-            tokenize(&Source {
-                text: ";(){}*;;+*-.,".to_string(),
-            }),
-            Ok(Tokens {
+            get_result(";(){}*;;+*-.,"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Semicolon,
@@ -364,17 +362,15 @@ mod tests {
                         line: 1
                     },
                 ]
-            })
+            }
         );
     }
 
     #[test]
     fn multi_character_tokens() {
         assert_eq!(
-            tokenize(&Source {
-                text: "!=!;== =<<>=> <=!!!".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("!=!;== =<<>=> <=!!!"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::BangEqual,
@@ -433,17 +429,15 @@ mod tests {
                         line: 1
                     },
                 ]
-            })
+            }
         );
     }
 
     #[test]
     fn comments_basics() {
         assert_eq!(
-            tokenize(&Source {
-                text: "!/!// ignored\n/!".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("!/!// ignored\n/!"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Bang,
@@ -470,17 +464,15 @@ mod tests {
                         line: 2
                     },
                 ]
-            })
+            }
         );
     }
 
     #[test]
     fn comment_no_trailing_newline() {
         assert_eq!(
-            tokenize(&Source {
-                text: "!/!// ignored".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("!/!// ignored"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Bang,
@@ -499,17 +491,15 @@ mod tests {
                         line: 1
                     },
                 ]
-            })
+            }
         );
     }
 
     #[test]
     fn ignored_whitespace() {
         assert_eq!(
-            tokenize(&Source {
-                text: "!  =  +  - \n! . * \t\t ; \n /".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("!  =  +  - \n! . * \t\t ; \n /"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Bang,
@@ -552,17 +542,15 @@ mod tests {
                         line: 3
                     },
                 ]
-            })
+            }
         );
     }
 
     #[test]
     fn basic_string() {
         assert_eq!(
-            tokenize(&Source {
-                text: "!!\"neat\";".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("!!\"neat\";"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Bang,
@@ -585,17 +573,15 @@ mod tests {
                         line: 1
                     },
                 ]
-            })
+            }
         );
     }
 
     #[test]
     fn unicode_string() {
         assert_eq!(
-            tokenize(&Source {
-                text: "!!\"jalapeño\";".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("!!\"jalapeño\";"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Bang,
@@ -618,17 +604,15 @@ mod tests {
                         line: 1
                     },
                 ]
-            })
+            }
         );
     }
 
     #[test]
     fn multiline_string() {
         assert_eq!(
-            tokenize(&Source {
-                text: "!\"ne\na\nt\";\n;".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("!\"ne\na\nt\";\n;"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Bang,
@@ -652,17 +636,15 @@ mod tests {
                         line: 4
                     },
                 ]
-            })
+            }
         );
     }
 
     #[test]
     fn multiline_int_not_a_thing() {
         assert_eq!(
-            tokenize(&Source {
-                text: "123\n456".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("123\n456"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Number("123".to_string()),
@@ -677,17 +659,15 @@ mod tests {
                         line: 2
                     },
                 ]
-            })
+            }
         );
     }
 
     #[test]
     fn integers() {
         assert_eq!(
-            tokenize(&Source {
-                text: "!123;".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("!123;"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Bang,
@@ -706,16 +686,14 @@ mod tests {
                         line: 1
                     },
                 ]
-            })
+            }
         );
     }
     #[test]
     fn floats() {
         assert_eq!(
-            tokenize(&Source {
-                text: "!123.456;".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("!123.456;"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Bang,
@@ -734,17 +712,15 @@ mod tests {
                         line: 1
                     },
                 ]
-            })
+            }
         );
     }
 
     #[test]
     fn int_at_end_of_input() {
         assert_eq!(
-            tokenize(&Source {
-                text: "123".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("123"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Number("123".to_string()),
@@ -755,17 +731,15 @@ mod tests {
                         line: 1
                     },
                 ]
-            })
+            }
         );
     }
 
     #[test]
     fn float_at_end_of_input() {
         assert_eq!(
-            tokenize(&Source {
-                text: "123.456".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("123.456"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Number("123.456".to_string()),
@@ -776,7 +750,7 @@ mod tests {
                         line: 1
                     },
                 ]
-            })
+            }
         );
     }
 
@@ -784,10 +758,8 @@ mod tests {
     fn num_leading_period() {
         // this is a weird one- I think i'm diverging from the book
         assert_eq!(
-            tokenize(&Source {
-                text: ".456".to_string(),
-            }),
-            Ok(Tokens {
+            get_result(".456"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Dot,
@@ -802,30 +774,15 @@ mod tests {
                         line: 1
                     },
                 ]
-            })
-        );
-    }
-
-    #[test]
-    fn num_trailing_period() {
-        assert_eq!(
-            tokenize(&Source {
-                text: "123.".to_string(),
-            }),
-            Err(vec![ScannerError::MissingDecimals {
-                val: "123.".to_string(),
-                line: 1
-            }])
+            }
         );
     }
 
     #[test]
     fn keywords() {
         assert_eq!(
-            tokenize(&Source {
-                text: "123.456".to_string(),
-            }),
-            Ok(Tokens {
+            get_result("123.456"),
+            Tokens {
                 tokens: vec![
                     Token {
                         value: TokenType::Number("123.456".to_string()),
@@ -836,28 +793,46 @@ mod tests {
                         line: 1
                     },
                 ]
-            })
+            }
+        );
+    }
+
+    #[test]
+    fn num_trailing_period() {
+        let errors = get_errors("123.");
+        assert_eq!(errors.len(), 1);
+        assert!(
+            errors[0]
+                .to_string()
+                .to_lowercase()
+                .contains("float with no decimals"),
         );
     }
 
     #[test]
     fn unterminated_string() {
-        assert_eq!(
-            tokenize(&Source {
-                text: "\"neat".to_string(),
-            }),
-            Err(vec![ScannerError::UnterminatedString { line: 1 }])
+        let errors = get_errors("\"neat");
+
+        assert_eq!(errors.len(), 1);
+        assert!(
+            errors[0]
+                .to_string()
+                .to_lowercase()
+                .contains("unterminated string"),
         );
     }
 
     #[test]
     fn unrecognized_character() {
-        assert_eq!(
-            tokenize(&Source {
-                // @ is never used
-                text: "!+@".to_string(),
-            }),
-            Err(vec![ScannerError::UnexpectedCharacter { c: '@', line: 1 }])
+        let errors = get_errors("!+@");
+        assert_eq!(errors.len(), 1);
+        assert!(
+            errors[0]
+                .to_string()
+                .to_lowercase()
+                .contains("unexpected character")
         );
+        assert!(errors[0].to_string().to_lowercase().contains("@"),);
+        assert!(errors[0].to_string().to_lowercase().contains("[line: 1]"),);
     }
 }
