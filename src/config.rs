@@ -1,3 +1,5 @@
+use anyhow::{Result, anyhow};
+
 #[derive(Debug, PartialEq)]
 pub enum RunMode {
     Repl,
@@ -9,14 +11,9 @@ pub struct Config {
     pub mode: RunMode,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum ConfigError {
-    TooManyArgs,
-}
-
 impl Config {
     /** Takes env:args and builds a config out of them. Fails if a filepath isn't given */
-    pub fn build(mut args: impl Iterator<Item = String>) -> Result<Config, ConfigError> {
+    pub fn build(mut args: impl Iterator<Item = String>) -> Result<Config> {
         // get rid of program name
         args.next();
 
@@ -32,7 +29,7 @@ impl Config {
 
         // but invalid with 2+
         match args.next() {
-            Some(_) => Err(ConfigError::TooManyArgs),
+            Some(_) => Err(anyhow!("Too many args")),
             None => Ok(config),
         }
     }
@@ -45,20 +42,20 @@ mod tests {
     #[test]
     fn repl_mode_works() {
         assert_eq!(
-            Config::build(vec!["my-program".to_string()].into_iter()),
-            Ok(Config {
+            Config::build(vec!["my-program".to_string()].into_iter()).unwrap(),
+            Config {
                 mode: RunMode::Repl
-            })
+            }
         );
     }
 
     #[test]
     fn source_mode_works() {
         assert_eq!(
-            Config::build(vec!["my-program".to_string(), "a/b/c".to_string()].into_iter()),
-            Ok(Config {
+            Config::build(vec!["my-program".to_string(), "a/b/c".to_string()].into_iter()).unwrap(),
+            Config {
                 mode: RunMode::Source("a/b/c".to_string())
-            })
+            }
         );
     }
 
@@ -72,8 +69,11 @@ mod tests {
                     "--whatever".to_string()
                 ]
                 .into_iter()
-            ),
-            Err(ConfigError::TooManyArgs)
+            )
+            .unwrap_err()
+            .to_string()
+            .to_lowercase(),
+            "too many args"
         );
     }
 }

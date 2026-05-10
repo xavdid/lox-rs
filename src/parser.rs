@@ -1,43 +1,15 @@
-use std::fmt::Display;
+use anyhow::{Result, anyhow};
 
 use crate::ast::{Ast, Expr, Literal, Stmt};
+use crate::join_errors;
 use crate::scanner::{Token, TokenType, Tokens};
-
-#[derive(Debug, PartialEq)]
-pub enum ParserError {
-    NoExpression,
-    MissingRParen { token: Token },
-    MissingRBrace { token: Token },
-    MissingSemiColon { token: Token },
-    MissingVarName { token: Token },
-    InvalidAssignmentTarget { token: Token },
-}
-
-impl Display for ParserError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParserError::MissingRParen { token } => {
-                write!(f, "[{token}] Missing ')' after expression.")
-            }
-            ParserError::MissingRBrace { token } => {
-                write!(f, "[{token}] Missing '}}' after block.")
-            }
-            ParserError::MissingSemiColon { token } => {
-                write!(f, "[{token}] Missing ';' after statement.")
-            }
-            ParserError::MissingVarName { token } => write!(f, "[{token}] Missing variable name."),
-            ParserError::NoExpression => write!(f, "No expressions at all?"),
-            ParserError::InvalidAssignmentTarget { token } => {
-                write!(f, "[{token}] Invaild assignment target.")
-            }
-        }
-    }
-}
 
 pub struct Parser {
     tokens: Vec<Token>,
     current: usize,
 }
+
+type ParserResult<T = Expr> = Result<T>;
 
 // > basic expression grammar:
 // each level represents a new precedence
@@ -58,7 +30,7 @@ impl Parser {
         Self { tokens, current: 0 }
     }
 
-    pub fn parse(mut self) -> Result<Ast, Vec<ParserError>> {
+    pub fn parse(mut self) -> Result<Ast, Vec<anyhow::Error>> {
         let mut statements = vec![];
         let mut errors = vec![];
 
@@ -82,7 +54,7 @@ impl Parser {
     // this is a _recursive descent_ parser, which means it recurses all the way down until it errors (by not finding an experssion at all, or hits some other parsing issue)
     // each function represents a slightly weaker operator precedence
 
-    fn parse_declaration(&mut self) -> Result<Stmt, ParserError> {
+    fn parse_declaration(&mut self) -> ParserResult<Stmt> {
         if self.next_if(TokenType::Var) {
             self.parse_var_declaration()
         } else {
@@ -90,7 +62,7 @@ impl Parser {
         }
     }
 
-    fn parse_var_declaration(&mut self) -> Result<Stmt, ParserError> {
+    fn parse_var_declaration(&mut self) -> ParserResult<Stmt> {
         let name = self.consume_identifier()?;
 
         let val = if self.next_if(TokenType::Equal) {
@@ -99,16 +71,12 @@ impl Parser {
             None
         };
 
-        if self.next_if(TokenType::Semicolon) {
-            Ok(Stmt::Var { name, val })
-        } else {
-            Err(ParserError::MissingSemiColon {
-                token: (*self.peek()).clone(),
-            })
-        }
+        self.next_if_or_err(TokenType::Semicolon, "Expected ';' after var declaration.")?;
+
+        Ok(Stmt::Var { name, val })
     }
 
-    fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
+    fn parse_statement(&mut self) -> ParserResult<Stmt> {
         if self.next_if(TokenType::For) {
             self.parse_for_statement()
         } else if self.next_if(TokenType::If) {
@@ -124,12 +92,8 @@ impl Parser {
         }
     }
 
-    fn parse_for_statement(&mut self) -> Result<Stmt, ParserError> {
-        if !self.next_if(TokenType::LeftParen) {
-            return Err(ParserError::MissingRParen {
-                token: (*self.peek()).clone(),
-            });
-        }
+    fn parse_for_statement(&mut self) -> ParserResult<Stmt> {
+        self.next_if_or_err(TokenType::LeftParen, "Expected '(' after 'for'.")?;
 
         let initializer: Option<Stmt> = if self.next_if(TokenType::Semicolon) {
             None
@@ -147,11 +111,7 @@ impl Parser {
         };
 
         // but always must end this section with a semicolon
-        if !self.next_if(TokenType::Semicolon) {
-            return Err(ParserError::MissingSemiColon {
-                token: (*self.peek()).clone(),
-            });
-        };
+        self.next_if_or_err(TokenType::Semicolon, "Expected ';' after loop condition.")?;
 
         // we parse an expression if present
         let increment = if matches!(self.peek().value, TokenType::RightParen) {
@@ -161,11 +121,7 @@ impl Parser {
         };
 
         // but always must end this section with a right paren
-        if !self.next_if(TokenType::RightParen) {
-            return Err(ParserError::MissingSemiColon {
-                token: (*self.peek()).clone(),
-            });
-        };
+        self.next_if_or_err(TokenType::RightParen, "Expected ')' after 'for' clauses.")?;
 
         let mut body = self.parse_statement()?;
 
@@ -212,20 +168,10 @@ impl Parser {
         Ok(body)
     }
 
-    fn parse_if_statement(&mut self) -> Result<Stmt, ParserError> {
-        if !self.next_if(TokenType::LeftParen) {
-            return Err(ParserError::MissingRParen {
-                token: (*self.peek()).clone(),
-            });
-        }
-
+    fn parse_if_statement(&mut self) -> ParserResult<Stmt> {
+        self.next_if_or_err(TokenType::LeftParen, "Expected '(' after 'if'.")?;
         let condition = self.parse_expression()?;
-
-        if !self.next_if(TokenType::RightParen) {
-            return Err(ParserError::MissingRParen {
-                token: (*self.peek()).clone(),
-            });
-        }
+        self.next_if_or_err(TokenType::RightParen, "Expected ')' after if condition.")?;
 
         let then_branch = self.parse_statement()?.into();
         let else_branch = if self.next_if(TokenType::Else) {
@@ -241,74 +187,49 @@ impl Parser {
         })
     }
 
-    fn parse_print_statement(&mut self) -> Result<Stmt, ParserError> {
+    fn parse_print_statement(&mut self) -> ParserResult<Stmt> {
         let value = self.parse_expression()?;
-        if self.next_if(TokenType::Semicolon) {
-            Ok(Stmt::Print(value))
-        } else {
-            Err(ParserError::MissingSemiColon {
-                token: (*self.peek()).clone(),
-            })
-        }
+        self.next_if_or_err(TokenType::Semicolon, "Expected ';' after statement.")?;
+        Ok(Stmt::Print(value))
     }
 
-    fn print_while_statement(&mut self) -> Result<Stmt, ParserError> {
-        if !self.next_if(TokenType::LeftParen) {
-            return Err(ParserError::MissingRParen {
-                token: (*self.peek()).clone(),
-            });
-        }
-
+    fn print_while_statement(&mut self) -> ParserResult<Stmt> {
+        self.next_if_or_err(TokenType::LeftParen, "Expected '(' after 'while'.")?;
         let condition = self.parse_expression()?;
-
-        if !self.next_if(TokenType::RightParen) {
-            return Err(ParserError::MissingRParen {
-                token: (*self.peek()).clone(),
-            });
-        }
+        self.next_if_or_err(TokenType::RightParen, "Expected ')' after condition.")?;
 
         let body = self.parse_statement()?.into();
 
         Ok(Stmt::While { condition, body })
     }
 
-    fn parse_block(&mut self) -> Result<Stmt, ParserError> {
+    fn parse_block(&mut self) -> ParserResult<Stmt> {
         let mut res = vec![];
 
         while !matches!(self.peek().value, TokenType::RightBrace) && !self.is_at_end() {
             res.push(self.parse_declaration()?);
         }
 
-        if self.next_if(TokenType::RightBrace) {
-            Ok(Stmt::Block(res))
-        } else {
-            Err(ParserError::MissingRParen {
-                token: (*self.peek()).clone(),
-            })
-        }
+        self.next_if_or_err(TokenType::RightBrace, "Expected '}' after block.")?;
+
+        Ok(Stmt::Block(res))
     }
 
-    fn parse_expression_statement(&mut self) -> Result<Stmt, ParserError> {
+    fn parse_expression_statement(&mut self) -> ParserResult<Stmt> {
         let value = self.parse_expression()?;
-        if self.next_if(TokenType::Semicolon) {
-            Ok(Stmt::Expression(value))
-        } else {
-            Err(ParserError::MissingSemiColon {
-                token: (*self.peek()).clone(),
-            })
-        }
+        self.next_if_or_err(TokenType::Semicolon, "Expected ';' after statement.")?;
+
+        Ok(Stmt::Expression(value))
     }
 
-    fn parse_expression(&mut self) -> Result<Expr, ParserError> {
+    fn parse_expression(&mut self) -> ParserResult {
         self.parse_assignment()
     }
 
-    fn parse_assignment(&mut self) -> Result<Expr, ParserError> {
+    fn parse_assignment(&mut self) -> ParserResult {
         let expr = self.parse_logical_or()?;
 
         if self.next_if(TokenType::Equal) {
-            let equals_token = self.previous();
-            let token = equals_token.clone();
             let value = self.parse_assignment()?;
 
             return match &expr {
@@ -316,14 +237,14 @@ impl Parser {
                     name: name.to_string(),
                     value: value.into(),
                 }),
-                _ => Err(ParserError::InvalidAssignmentTarget { token }),
+                _ => Err(self.build_error("Invalid assignment target.")),
             };
         }
 
         Ok(expr)
     }
 
-    fn parse_logical_or(&mut self) -> Result<Expr, ParserError> {
+    fn parse_logical_or(&mut self) -> ParserResult {
         let mut expr = self.parse_logical_and()?;
         while self.next_if(TokenType::Or) {
             let op = self.previous().clone().into();
@@ -338,7 +259,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_logical_and(&mut self) -> Result<Expr, ParserError> {
+    fn parse_logical_and(&mut self) -> ParserResult {
         let mut expr = self.parse_equality()?;
 
         while self.next_if(TokenType::And) {
@@ -354,7 +275,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_equality(&mut self) -> Result<Expr, ParserError> {
+    fn parse_equality(&mut self) -> ParserResult {
         let mut expr = self.parse_comparison()?;
 
         while self.next_if(TokenType::BangEqual) || self.next_if(TokenType::EqualEqual) {
@@ -370,7 +291,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_comparison(&mut self) -> Result<Expr, ParserError> {
+    fn parse_comparison(&mut self) -> ParserResult {
         let mut expr = self.parse_term()?;
 
         while self.next_if(TokenType::GreaterThan)
@@ -391,7 +312,7 @@ impl Parser {
     }
 
     // addition / subtraction
-    fn parse_term(&mut self) -> Result<Expr, ParserError> {
+    fn parse_term(&mut self) -> ParserResult {
         let mut expr = self.parse_factor()?;
 
         while self.next_if(TokenType::Minus) || self.next_if(TokenType::Plus) {
@@ -408,7 +329,7 @@ impl Parser {
     }
 
     // multiplication / division
-    fn parse_factor(&mut self) -> Result<Expr, ParserError> {
+    fn parse_factor(&mut self) -> ParserResult {
         let mut expr = self.parse_unary()?;
 
         while self.next_if(TokenType::Slash) || self.next_if(TokenType::Star) {
@@ -425,7 +346,7 @@ impl Parser {
     }
 
     // infix operators, like `!true` and `-1`
-    fn parse_unary(&mut self) -> Result<Expr, ParserError> {
+    fn parse_unary(&mut self) -> ParserResult {
         if self.next_if(TokenType::Bang) || self.next_if(TokenType::Minus) {
             let op = self.previous().value.clone().into();
             let expr = self.parse_unary()?.into();
@@ -436,7 +357,7 @@ impl Parser {
     }
 
     // this is our eventual base case (with the highest precedence)- literals no longer recurse
-    fn parse_primary(&mut self) -> Result<Expr, ParserError> {
+    fn parse_primary(&mut self) -> ParserResult {
         if let Some(literal) = match &self.peek().value {
             TokenType::Nil => Some(Literal::Nil),
             TokenType::True => Some(Literal::True),
@@ -462,19 +383,27 @@ impl Parser {
         if self.next_if(TokenType::LeftParen) {
             let expr = self.parse_expression()?;
 
-            if self.next_if(TokenType::RightParen) {
-                return Ok(Expr::Grouping(expr.into()));
-            } else {
-                return Err(ParserError::MissingRParen {
-                    token: (*self.peek()).clone(),
-                });
-            }
+            self.next_if_or_err(TokenType::RightParen, "Missing ')' after expression.")?;
+
+            return Ok(Expr::Grouping(expr.into()));
         }
 
-        Err(ParserError::NoExpression)
+        Err(anyhow!("No expression at all?"))
     }
 
     // HELPERS
+
+    fn next_if_or_err(&mut self, t: TokenType, msg: &str) -> ParserResult<()> {
+        if self.next_if(t) {
+            Ok(())
+        } else {
+            Err(self.build_error(msg))
+        }
+    }
+
+    fn build_error(&self, msg: &str) -> anyhow::Error {
+        anyhow!("[{}] {msg}", self.peek())
+    }
 
     /** book calls this `match`, but I don't like that it doesn't communicate that it advances the pointer. Returns whether it matched and advanced */
     // TODO: option? we always call .previous() right after
@@ -487,7 +416,7 @@ impl Parser {
         }
     }
     /**  this like `consume_if` but hardcodes Identifier since I can't match my enums that hold values as a function arg */
-    fn consume_identifier(&mut self) -> Result<String, ParserError> {
+    fn consume_identifier(&mut self) -> ParserResult<String> {
         if matches!(self.peek().value, TokenType::Identifier(_)) {
             if let TokenType::Identifier(name) = &self.next().value {
                 Ok(name.to_string())
@@ -495,10 +424,7 @@ impl Parser {
                 panic!(".peek() said we had an idenitifier, but we didn't?")
             }
         } else {
-            // TODO: util function- we do this a few places
-            Err(ParserError::MissingVarName {
-                token: (*self.peek()).clone(),
-            })
+            Err(self.build_error("Missing variable name."))
         }
     }
 
@@ -544,101 +470,113 @@ impl Parser {
     }
 }
 
-pub fn parse(tokens: Tokens) -> Result<Ast, Vec<ParserError>> {
-    Parser::new(tokens.tokens).parse()
+pub fn parse(tokens: Tokens) -> Result<Ast> {
+    Parser::new(tokens.tokens).parse().map_err(join_errors)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::*;
-
     use super::*;
+    use crate::ast::*;
+    use crate::test_util::assert_contains;
+    use anyhow::Error;
 
     /** helper for more legible token-heavy tests  */
     fn token(value: TokenType) -> Token {
         Token { value, line: 1 }
     }
 
+    fn parse(tokens: Vec<Token>) -> Ast {
+        Parser::new(tokens)
+            .parse()
+            .expect("this method should return Ok()")
+    }
+    fn fail_parse(tokens: Vec<Token>) -> Vec<Error> {
+        Parser::new(tokens)
+            .parse()
+            .expect_err("this method should return Err()")
+    }
+
     #[test]
     fn it_parses_basic_nil() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Nil),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Literal(Literal::Nil))]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_basic_bool() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::False),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Literal(Literal::False))]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_basic_string() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::String("cool".to_string())),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Literal(Literal::String(
                     "cool".to_string()
                 )))]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_basic_int() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Number("123".to_string())),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Literal(Literal::Number(123.0)))]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_basic_float() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Number("123.456".to_string())),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Literal(Literal::Number(123.456)))]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_basic_grouping() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::LeftParen),
             token(TokenType::True),
             token(TokenType::RightParen),
@@ -646,37 +584,37 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Grouping(
                     Expr::Literal(Literal::True).into()
                 ))]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_basic_unary() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Minus),
             token(TokenType::Number("3".to_string())),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Unary {
                     op: UnaryOp::Neg,
                     expr: Expr::Literal(Literal::Number(3.0)).into()
                 })]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_basic_binary() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Number("1".to_string())),
             token(TokenType::Slash),
             token(TokenType::Number("2".to_string())),
@@ -684,20 +622,20 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Binary {
                     left: Expr::Literal(Literal::Number(1.0)).into(),
                     op: BinaryOp::Div,
                     right: Expr::Literal(Literal::Number(2.0)).into()
                 })]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_flat_nested_binary() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Number("1".to_string())),
             token(TokenType::Plus),
             token(TokenType::Number("2".to_string())),
@@ -709,8 +647,8 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Binary {
                     left: Expr::Binary {
                         left: Expr::Binary {
@@ -726,13 +664,13 @@ mod tests {
                     op: BinaryOp::Sub,
                     right: Expr::Literal(Literal::Number(4.0)).into()
                 })]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_nested_unary() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Bang),
             token(TokenType::Bang),
             token(TokenType::Number("2".to_string())),
@@ -740,8 +678,8 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Unary {
                     op: UnaryOp::Not,
                     expr: Expr::Unary {
@@ -750,13 +688,13 @@ mod tests {
                     }
                     .into()
                 })]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_nested_binary() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Number("3".to_string())),
             token(TokenType::Star),
             token(TokenType::LeftParen),
@@ -768,8 +706,8 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Binary {
                     left: Expr::Literal(Literal::Number(3.0)).into(),
                     op: BinaryOp::Mul,
@@ -783,13 +721,13 @@ mod tests {
                     )
                     .into()
                 })]
-            })
+            }
         )
     }
 
     #[test]
     fn it_mixes_unary_and_binary() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Minus),
             token(TokenType::Number("3".to_string())),
             token(TokenType::LessThanEqual),
@@ -803,8 +741,8 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Binary {
                     left: Expr::Unary {
                         op: UnaryOp::Neg,
@@ -826,29 +764,29 @@ mod tests {
                     )
                     .into()
                 })]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_print_statements() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Print),
             token(TokenType::Number("3".to_string())),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Print(Expr::Literal(Literal::Number(3.0)))]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_block_statements() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::LeftBrace),
             token(TokenType::Print),
             token(TokenType::Number("2".to_string())),
@@ -860,19 +798,19 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Block(vec![
                     Stmt::Print(Expr::Literal(Literal::Number(2.0))),
                     Stmt::Print(Expr::Literal(Literal::Number(3.0)))
                 ])]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_if_statements_no_else() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::If),
             token(TokenType::LeftParen),
             token(TokenType::Number("2".to_string())),
@@ -900,8 +838,8 @@ mod tests {
             },
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::If {
                     condition: Expr::Literal(Literal::Number(2.0)),
                     then_branch: Stmt::Block(vec![Stmt::Print(Expr::Literal(Literal::Number(
@@ -910,13 +848,13 @@ mod tests {
                     .into(),
                     else_branch: None
                 }]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_if_statements_else() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::If),
             token(TokenType::LeftParen),
             token(TokenType::Number("2".to_string())),
@@ -968,8 +906,8 @@ mod tests {
             },
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::If {
                     condition: Expr::Literal(Literal::Number(2.0)),
                     then_branch: Stmt::Block(vec![Stmt::Print(Expr::Literal(Literal::Number(
@@ -980,13 +918,13 @@ mod tests {
                         Stmt::Block(vec![Stmt::Print(Expr::Literal(Literal::Number(-1.0)))]).into()
                     )
                 }]
-            })
+            }
         )
     }
 
     #[test]
     fn it_fails_on_bad_block_statements() {
-        let parser = Parser::new(vec![
+        let errors = fail_parse(vec![
             token(TokenType::LeftBrace),
             token(TokenType::Print),
             token(TokenType::Number("2".to_string())),
@@ -997,19 +935,13 @@ mod tests {
             token(TokenType::Eof),
         ]);
 
-        let res = parser.parse().unwrap_err();
-        assert_eq!(res.len(), 1);
-        assert_eq!(
-            res.first().unwrap(),
-            &ParserError::MissingRParen {
-                token: token(TokenType::Eof),
-            }
-        );
+        assert_eq!(errors.len(), 1);
+        assert_contains(&errors[0], "expected '}'");
     }
 
     #[test]
     fn it_parses_while_statements() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::While),
             token(TokenType::LeftParen),
             token(TokenType::Number("2".to_string())),
@@ -1037,20 +969,20 @@ mod tests {
             },
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::While {
                     condition: Expr::Literal(Literal::Number(2.0)),
                     body: Stmt::Block(vec![Stmt::Print(Expr::Literal(Literal::Number(3.0)))])
                         .into(),
                 }]
-            })
+            }
         )
     }
 
     #[test]
     fn it_fails_bad_while_statements() {
-        let parser = Parser::new(vec![
+        let errors = fail_parse(vec![
             token(TokenType::While),
             token(TokenType::LeftParen),
             token(TokenType::Number("2".to_string())),
@@ -1076,18 +1008,14 @@ mod tests {
                 line: 3,
             },
         ]);
-        let res = parser.parse().unwrap_err();
-        assert_eq!(
-            res.first().unwrap(),
-            &ParserError::MissingRParen {
-                token: token(TokenType::LeftBrace),
-            }
-        )
+
+        // assert_eq!(errors.len(), 1);
+        assert_contains(&errors[0], "expected ')'");
     }
 
     #[test]
     fn it_parses_full_for_statements() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::For),
             token(TokenType::LeftParen),
             token(TokenType::Var),
@@ -1113,8 +1041,8 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 // {
                 //   var i = 0; // A
                 //   while (i < 10) { // B
@@ -1148,13 +1076,13 @@ mod tests {
                         .into(),
                     }
                 ])]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_for_statements_no_condition() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::For),
             token(TokenType::LeftParen),
             token(TokenType::Var),
@@ -1177,8 +1105,8 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Block(vec![
                     Stmt::Var {
                         name: "i".to_string(),
@@ -1201,13 +1129,13 @@ mod tests {
                         .into(),
                     }
                 ])]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_for_statements_no_increment() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::For),
             token(TokenType::LeftParen),
             token(TokenType::Var),
@@ -1228,8 +1156,8 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Block(vec![
                     Stmt::Var {
                         name: "i".to_string(),
@@ -1245,13 +1173,13 @@ mod tests {
                             .into(),
                     }
                 ])]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_for_statement_no_initializer() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::For),
             token(TokenType::LeftParen),
             token(TokenType::Semicolon),
@@ -1273,8 +1201,8 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 // {
                 //   var i = 0; // A
                 //   while (i < 10) { // B
@@ -1302,13 +1230,13 @@ mod tests {
                     ])
                     .into(),
                 }]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_minimal_for_statements() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::For),
             token(TokenType::LeftParen),
             token(TokenType::Semicolon),
@@ -1322,8 +1250,8 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 // {
                 //   var i = 0; // A
                 //   while (i < 10) { // B
@@ -1335,13 +1263,13 @@ mod tests {
                     condition: Expr::Literal(Literal::True),
                     body: Stmt::Block(vec![Stmt::Print(Expr::Variable("i".to_string()))]).into(),
                 }]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_var_declarations_with_values() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Var),
             token(TokenType::Identifier("name".to_string())),
             token(TokenType::Equal),
@@ -1350,19 +1278,19 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Var {
                     name: "name".to_string(),
                     val: Some(Expr::Literal(Literal::String("david".to_string())))
                 }]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_var_declarations_with_complex_values() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Var),
             token(TokenType::Identifier("name".to_string())),
             token(TokenType::Equal),
@@ -1377,8 +1305,8 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Var {
                     name: "name".to_string(),
                     val: Some(Expr::Binary {
@@ -1395,66 +1323,66 @@ mod tests {
                         right: Expr::Literal(Literal::Number(3.0)).into()
                     })
                 }]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_empty_var_declarations() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Var),
             token(TokenType::Identifier("name".to_string())),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Var {
                     name: "name".to_string(),
                     val: None
                 }]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_var_access() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Identifier("name".to_string())),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Variable("name".to_string()))]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_nested_var_access() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Minus),
             token(TokenType::Identifier("name".to_string())),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Unary {
                     op: UnaryOp::Neg,
                     expr: Expr::Variable("name".to_string()).into()
                 })]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_logical_or() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::String("name".to_string())),
             token(TokenType::Or),
             token(TokenType::String("age".to_string())),
@@ -1462,20 +1390,20 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Logical {
                     left: Expr::Literal(Literal::String("name".to_string())).into(),
                     op: LogicalOp::Or,
                     right: Expr::Literal(Literal::String("age".to_string())).into()
                 })]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_logical_and() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Number("123".to_string())),
             token(TokenType::And),
             token(TokenType::Number("456".to_string())),
@@ -1483,20 +1411,20 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Logical {
                     left: Expr::Literal(Literal::Number(123.0)).into(),
                     op: LogicalOp::And,
                     right: Expr::Literal(Literal::Number(456.0)).into()
                 })]
-            })
+            }
         )
     }
 
     #[test]
     fn it_parses_nested_logical_operators() {
-        let parser = Parser::new(vec![
+        let result = parse(vec![
             token(TokenType::Number("123".to_string())),
             token(TokenType::And),
             token(TokenType::Number("456".to_string())),
@@ -1508,8 +1436,8 @@ mod tests {
             token(TokenType::Eof),
         ]);
         assert_eq!(
-            parser.parse(),
-            Ok(Ast {
+            result,
+            Ast {
                 statements: vec![Stmt::Expression(Expr::Logical {
                     left: Expr::Logical {
                         left: Expr::Logical {
@@ -1525,61 +1453,45 @@ mod tests {
                     op: LogicalOp::Or,
                     right: Expr::Literal(Literal::Number(890.0)).into()
                 })]
-            })
+            }
         )
     }
 
     #[test]
     fn it_fails_for_broken_grouping() {
-        let parser = Parser::new(vec![
+        let errors = fail_parse(vec![
             token(TokenType::LeftParen),
             token(TokenType::True),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
-        let res = parser.parse().unwrap_err();
-        assert_eq!(res.len(), 1);
-        assert_eq!(
-            res.first().unwrap(),
-            &ParserError::MissingRParen {
-                token: token(TokenType::Semicolon),
-            }
-        )
+        assert_eq!(errors.len(), 1);
+        assert_contains(&errors[0], "missing ')'");
     }
 
     #[test]
     fn it_fails_for_missing_semi_in_print() {
-        let parser = Parser::new(vec![
+        let errors = fail_parse(vec![
             token(TokenType::Print),
             token(TokenType::True),
             token(TokenType::Eof),
         ]);
-        let res = parser.parse().unwrap_err();
-        assert_eq!(res.len(), 1);
-        assert_eq!(
-            res.first().unwrap(),
-            &ParserError::MissingSemiColon {
-                token: token(TokenType::Eof),
-            }
-        )
+
+        assert_eq!(errors.len(), 1);
+        assert_contains(&errors[0], "expected ';'");
     }
 
     #[test]
     fn it_fails_for_invalid_assignment() {
-        let parser = Parser::new(vec![
+        let errors = fail_parse(vec![
             token(TokenType::Number("3".to_string())),
             token(TokenType::Equal),
             token(TokenType::Number("5".to_string())),
             token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
-        let res = parser.parse().unwrap_err();
-        assert_eq!(res.len(), 1);
-        assert_eq!(
-            res.first().unwrap(),
-            &ParserError::InvalidAssignmentTarget {
-                token: token(TokenType::Equal),
-            }
-        )
+
+        assert_eq!(errors.len(), 1);
+        assert_contains(&errors[0], "invalid assignment target");
     }
 }

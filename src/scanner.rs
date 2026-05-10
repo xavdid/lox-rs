@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use std::{fmt::Display, iter, vec};
 
-use crate::reader::Source;
+use crate::{join_errors, reader::Source};
 
 #[derive(Debug, PartialEq)]
 pub struct Tokens {
@@ -36,7 +36,6 @@ pub enum TokenType {
     // Literals.
     // adding a value may be a mistake here, but we'll see!
     Identifier(String),
-    // don't use the built-in string name
     String(String),
     Number(String),
 
@@ -236,7 +235,7 @@ impl Scanner<'_> {
         };
     }
 
-    /** add a string token, consuming what it needs */
+    /** add a string token, consuming what it needs. Will eat all further syntax errors, since it scans the rest of the input looking for a closing quote */
     fn add_string(&mut self) {
         // consume until we end or hit another quote
         // multi-line strings are supported
@@ -253,7 +252,7 @@ impl Scanner<'_> {
             Some(_) => panic!(
                 "ended a string on neither a doublequote or the end of the stream?? Shouldn't happen"
             ),
-            None => self.new_err(&format!("Unterminated string started")),
+            None => self.new_err("Unterminated string started"),
         };
     }
 
@@ -267,31 +266,21 @@ fn is_ident(c: char) -> bool {
 }
 
 pub fn tokenize(source: &Source) -> Result<Tokens> {
-    match Scanner::new(source).scan_tokens() {
-        Ok(t) => Ok(t),
-        Err(errors) => {
-            let joined: String = errors
-                .iter()
-                .map(|e| format!("Scanner err: {e}\n"))
-                .collect();
-
-            Err(anyhow!(joined))
-        }
-    }
+    Scanner::new(source).scan_tokens().map_err(join_errors)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn get_result(text: &str) -> Tokens {
+    fn scan(text: &str) -> Tokens {
         Scanner::new(&Source {
             text: text.to_string(),
         })
         .scan_tokens()
-        .expect("success method expects success")
+        .expect("this method should return Ok()")
     }
-    fn get_errors(text: &str) -> Vec<anyhow::Error> {
+    fn fail_scan(text: &str) -> Vec<anyhow::Error> {
         Scanner::new(&Source {
             text: text.to_string(),
         })
@@ -302,7 +291,7 @@ mod tests {
     #[test]
     fn it_works() {
         assert_eq!(
-            get_result(";(){}*;;+*-.,"),
+            scan(";(){}*;;+*-.,"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -369,7 +358,7 @@ mod tests {
     #[test]
     fn multi_character_tokens() {
         assert_eq!(
-            get_result("!=!;== =<<>=> <=!!!"),
+            scan("!=!;== =<<>=> <=!!!"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -436,7 +425,7 @@ mod tests {
     #[test]
     fn comments_basics() {
         assert_eq!(
-            get_result("!/!// ignored\n/!"),
+            scan("!/!// ignored\n/!"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -471,7 +460,7 @@ mod tests {
     #[test]
     fn comment_no_trailing_newline() {
         assert_eq!(
-            get_result("!/!// ignored"),
+            scan("!/!// ignored"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -498,7 +487,7 @@ mod tests {
     #[test]
     fn ignored_whitespace() {
         assert_eq!(
-            get_result("!  =  +  - \n! . * \t\t ; \n /"),
+            scan("!  =  +  - \n! . * \t\t ; \n /"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -549,7 +538,7 @@ mod tests {
     #[test]
     fn basic_string() {
         assert_eq!(
-            get_result("!!\"neat\";"),
+            scan("!!\"neat\";"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -580,7 +569,7 @@ mod tests {
     #[test]
     fn unicode_string() {
         assert_eq!(
-            get_result("!!\"jalapeño\";"),
+            scan("!!\"jalapeño\";"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -611,7 +600,7 @@ mod tests {
     #[test]
     fn multiline_string() {
         assert_eq!(
-            get_result("!\"ne\na\nt\";\n;"),
+            scan("!\"ne\na\nt\";\n;"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -643,7 +632,7 @@ mod tests {
     #[test]
     fn multiline_int_not_a_thing() {
         assert_eq!(
-            get_result("123\n456"),
+            scan("123\n456"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -666,7 +655,7 @@ mod tests {
     #[test]
     fn integers() {
         assert_eq!(
-            get_result("!123;"),
+            scan("!123;"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -692,7 +681,7 @@ mod tests {
     #[test]
     fn floats() {
         assert_eq!(
-            get_result("!123.456;"),
+            scan("!123.456;"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -719,7 +708,7 @@ mod tests {
     #[test]
     fn int_at_end_of_input() {
         assert_eq!(
-            get_result("123"),
+            scan("123"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -738,7 +727,7 @@ mod tests {
     #[test]
     fn float_at_end_of_input() {
         assert_eq!(
-            get_result("123.456"),
+            scan("123.456"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -758,7 +747,7 @@ mod tests {
     fn num_leading_period() {
         // this is a weird one- I think i'm diverging from the book
         assert_eq!(
-            get_result(".456"),
+            scan(".456"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -781,7 +770,7 @@ mod tests {
     #[test]
     fn keywords() {
         assert_eq!(
-            get_result("123.456"),
+            scan("123.456"),
             Tokens {
                 tokens: vec![
                     Token {
@@ -797,42 +786,47 @@ mod tests {
         );
     }
 
+    use crate::test_util::assert_contains;
     #[test]
     fn num_trailing_period() {
-        let errors = get_errors("123.");
+        let errors = fail_scan("123.");
         assert_eq!(errors.len(), 1);
-        assert!(
-            errors[0]
-                .to_string()
-                .to_lowercase()
-                .contains("float with no decimals"),
-        );
+        assert_contains(&errors[0], "float with no decimals");
     }
 
     #[test]
     fn unterminated_string() {
-        let errors = get_errors("\"neat");
-
+        let errors = fail_scan("\"neat");
         assert_eq!(errors.len(), 1);
-        assert!(
-            errors[0]
-                .to_string()
-                .to_lowercase()
-                .contains("unterminated string"),
-        );
+        assert_contains(&errors[0], "unterminated string");
     }
 
     #[test]
     fn unrecognized_character() {
-        let errors = get_errors("!+@");
+        let errors = fail_scan("!+@");
         assert_eq!(errors.len(), 1);
-        assert!(
-            errors[0]
-                .to_string()
-                .to_lowercase()
-                .contains("unexpected character")
-        );
-        assert!(errors[0].to_string().to_lowercase().contains("@"),);
-        assert!(errors[0].to_string().to_lowercase().contains("[line: 1]"),);
+        assert_contains(&errors[0], "unexpected character");
+        assert_contains(&errors[0], "@");
+        assert_contains(&errors[0], "[line: 1]");
+    }
+
+    #[test]
+    fn multiple_errors() {
+        let errors = fail_scan("!+@\n12.");
+        assert_eq!(errors.len(), 2);
+
+        assert_contains(&errors[0], "@");
+        assert_contains(&errors[0], "[line: 1]");
+        assert_contains(&errors[1], "decimals");
+        assert_contains(&errors[1], "[line: 2]");
+    }
+
+    #[test]
+    fn unterminated_takes_priority() {
+        let errors = fail_scan("\"a!+@\n12.");
+        assert_eq!(errors.len(), 1);
+
+        assert_contains(&errors[0], "unterminated string");
+        assert_contains(&errors[0], "[line: 1]");
     }
 }

@@ -1,5 +1,6 @@
 
 set quiet
+set no-exit-message
 
 _default:
   just --list
@@ -27,5 +28,5 @@ alias s := sync
 alias sa := sync-all
 
 example name:
-  cargo run data/{{ name }}.lox
+  cargo run --quiet data/{{ name }}.lox
 alias ex := example

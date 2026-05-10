@@ -1,10 +1,11 @@
-use std::{fs::read_to_string, io};
+use anyhow::Result;
+use std::fs::read_to_string;
 
 pub struct Source {
     pub text: String,
 }
 
-pub fn read_source(path: &str) -> Result<Source, io::Error> {
+pub fn read_source(path: &str) -> Result<Source> {
     let text = read_to_string(path)?;
 
     Ok(Source { text })
