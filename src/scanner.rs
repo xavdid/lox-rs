@@ -272,6 +272,7 @@ pub fn tokenize(source: &Source) -> Result<Tokens> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::assert_contains;
 
     fn scan(text: &str) -> Tokens {
         Scanner::new(&Source {
@@ -786,7 +787,6 @@ mod tests {
         );
     }
 
-    use crate::test_util::assert_contains;
     #[test]
     fn num_trailing_period() {
         let errors = fail_scan("123.");

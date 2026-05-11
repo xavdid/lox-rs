@@ -96,7 +96,7 @@ pub fn run(input: &Source) -> Result<()> {
     // this is the core of the interpreter
     let tokens = tokenize(input)?;
     let ast = parse(tokens)?;
-    interpret(ast).unwrap(); // TODO: Fix
+    interpret(ast)?;
 
     Ok(())
 }

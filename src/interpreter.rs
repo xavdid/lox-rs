@@ -1,3 +1,4 @@
+use anyhow::{Result, anyhow};
 use std::{fmt::Display, mem::discriminant};
 
 use crate::ast::*;
@@ -16,50 +17,14 @@ impl Display for LoxValue {
         let res = match self {
             LoxValue::Nil => "nil",
             LoxValue::Number(v) => &v.to_string(),
-            LoxValue::LString(v) => v,
+            LoxValue::LString(v) => &format!("\"{v}\""),
             LoxValue::Boolean(v) => &v.to_string(),
         };
         write!(f, "{res}")
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum InterpreterError {
-    InvalidUnaryExpr(Expr),
-    InvalidBinaryExprIncompatibleTypes(Expr),
-    InvalidBinaryExprInvalidTypes(Expr),
-    UndefinedVariable(Expr),
-}
-
-impl Display for InterpreterError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            InterpreterError::InvalidUnaryExpr(expr) => match expr {
-                Expr::Unary { .. } => write!(f, "ERR: Invalid unary: {expr}."),
-                _ => panic!("Put a non-unary expression in a unary error: {expr}"),
-            },
-            InterpreterError::InvalidBinaryExprIncompatibleTypes(expr) => match expr {
-                Expr::Binary { .. } => write!(
-                    f,
-                    "ERR: Expected both sides of a binary expression to have the same type. Got: {expr}.",
-                ),
-                _ => panic!("Put a non-binary expression in a binary error: {expr}"),
-            },
-            InterpreterError::InvalidBinaryExprInvalidTypes(expr) => match expr {
-                Expr::Binary { .. } => write!(
-                    f,
-                    "ERR: Operation not supported for these data types. Got: {expr}.",
-                ),
-                _ => panic!("Put a non-binary expression in a binary error: {expr}"),
-            },
-            InterpreterError::UndefinedVariable(expr) => {
-                write!(f, "ERR: Variable {expr} not defined.",)
-            }
-        }
-    }
-}
-
-pub fn interpret(ast: Ast) -> Result<(), InterpreterError> {
+pub fn interpret(ast: Ast) -> Result<()> {
     let env = Environment::new();
     for stmt in ast.statements {
         execute(&stmt, &env)?
@@ -69,7 +34,7 @@ pub fn interpret(ast: Ast) -> Result<(), InterpreterError> {
 }
 
 /** execute a statement for its side effects */
-fn execute(stmt: &Stmt, env: &Environment) -> Result<(), InterpreterError> {
+fn execute(stmt: &Stmt, env: &Environment) -> Result<()> {
     match stmt {
         Stmt::Expression(expr) => {
             evaluate(expr, env)?;
@@ -116,7 +81,7 @@ fn execute(stmt: &Stmt, env: &Environment) -> Result<(), InterpreterError> {
 }
 
 /** evaluate the result of an exprsesion */
-fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue, InterpreterError> {
+fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
     Ok(match expr {
         Expr::Literal(literal) => match literal {
             Literal::Number(n) => LoxValue::Number(*n),
@@ -157,12 +122,12 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue, InterpreterError
 
                 _ => {
                     return if discriminant(&left) == discriminant(&right) {
-                        Err(InterpreterError::InvalidBinaryExprInvalidTypes(
-                            expr.clone(),
+                        Err(anyhow!(
+                            "Operation \"{op}\" not supported between {left:?} and {right:?}."
                         ))
                     } else {
-                        Err(InterpreterError::InvalidBinaryExprIncompatibleTypes(
-                            expr.clone(),
+                        Err(anyhow!(
+                            "Expected both sides of a binary expression to have the same type, got {left:?} and {right:?}."
                         ))
                     };
                 }
@@ -175,20 +140,20 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue, InterpreterError
                 (UnaryOp::Neg, LoxValue::Number(n)) => LoxValue::Number(-n),
                 (UnaryOp::Not, v) => LoxValue::Boolean(!is_truthy(&v)),
 
-                _ => return Err(InterpreterError::InvalidUnaryExpr(expr.clone())),
+                _ => return Err(anyhow!("Invalid unary: {expr}")),
             }
         }
         Expr::Grouping(expr) => evaluate(expr, env)?,
         Expr::Variable(name) => match env.get(name) {
             Some(v) => v,
-            None => return Err(InterpreterError::UndefinedVariable(expr.clone())),
+            None => return Err(anyhow!("Variable \"{expr}\" not defined.")),
         },
         Expr::Assign { name, value } => {
             let val = evaluate(value, env)?;
 
             match env.assign(name, val) {
                 Some(val) => val,
-                None => return Err(InterpreterError::UndefinedVariable(expr.clone())),
+                None => return Err(anyhow!("Variable \"{expr}\" not defined.")),
             }
         }
         Expr::Logical { left, op, right } => {
@@ -215,32 +180,38 @@ fn is_truthy(expr: &LoxValue) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::assert_contains;
 
     // Helper for tests
-    fn test_eval(e: &Expr) -> Result<LoxValue, InterpreterError> {
+    fn test_eval(e: &Expr) -> LoxValue {
         let env = Environment::new();
-        evaluate(e, &env)
+        evaluate(e, &env).expect("eval should return Ok(())")
+    }
+
+    fn fail_eval(e: &Expr) -> anyhow::Error {
+        let env = Environment::new();
+        evaluate(e, &env).expect_err("eval should return Ok(())")
     }
 
     #[test]
     fn it_evaluates_literals() {
         assert_eq!(
             test_eval(&Expr::Literal(Literal::Number(123.456))),
-            Ok(LoxValue::Number(123.456))
+            LoxValue::Number(123.456)
         );
         assert_eq!(
             test_eval(&Expr::Literal(Literal::String("david!".to_string()))),
-            Ok(LoxValue::LString("david!".to_string()))
+            LoxValue::LString("david!".to_string())
         );
         assert_eq!(
             test_eval(&Expr::Literal(Literal::True)),
-            Ok(LoxValue::Boolean(true))
+            LoxValue::Boolean(true)
         );
         assert_eq!(
             test_eval(&Expr::Literal(Literal::False)),
-            Ok(LoxValue::Boolean(false))
+            LoxValue::Boolean(false)
         );
-        assert_eq!(test_eval(&Expr::Literal(Literal::Nil)), Ok(LoxValue::Nil));
+        assert_eq!(test_eval(&Expr::Literal(Literal::Nil)), LoxValue::Nil);
     }
 
     #[test]
@@ -249,7 +220,7 @@ mod tests {
             test_eval(&Expr::Grouping(
                 Expr::Literal(Literal::Number(123.456)).into()
             )),
-            Ok(LoxValue::Number(123.456))
+            LoxValue::Number(123.456)
         );
     }
 
@@ -276,7 +247,7 @@ mod tests {
                 op: UnaryOp::Neg,
                 expr: Expr::Literal(Literal::Number(123.456)).into()
             }),
-            Ok(LoxValue::Number(-123.456))
+            LoxValue::Number(-123.456)
         );
 
         assert_eq!(
@@ -284,7 +255,7 @@ mod tests {
                 op: UnaryOp::Neg,
                 expr: Expr::Literal(Literal::Number(-123.456)).into()
             }),
-            Ok(LoxValue::Number(123.456))
+            LoxValue::Number(123.456)
         );
     }
 
@@ -295,42 +266,42 @@ mod tests {
                 op: UnaryOp::Not,
                 expr: Expr::Literal(Literal::Number(123.456)).into()
             }),
-            Ok(LoxValue::Boolean(false))
+            LoxValue::Boolean(false)
         );
         assert_eq!(
             test_eval(&Expr::Unary {
                 op: UnaryOp::Not,
                 expr: Expr::Literal(Literal::Number(-123.456)).into()
             }),
-            Ok(LoxValue::Boolean(false))
+            LoxValue::Boolean(false)
         );
         assert_eq!(
             test_eval(&Expr::Unary {
                 op: UnaryOp::Not,
                 expr: Expr::Literal(Literal::String("very cool".to_string())).into()
             }),
-            Ok(LoxValue::Boolean(false))
+            LoxValue::Boolean(false)
         );
         assert_eq!(
             test_eval(&Expr::Unary {
                 op: UnaryOp::Not,
                 expr: Expr::Literal(Literal::True).into()
             }),
-            Ok(LoxValue::Boolean(false))
+            LoxValue::Boolean(false)
         );
         assert_eq!(
             test_eval(&Expr::Unary {
                 op: UnaryOp::Not,
                 expr: Expr::Literal(Literal::False).into()
             }),
-            Ok(LoxValue::Boolean(true))
+            LoxValue::Boolean(true)
         );
         assert_eq!(
             test_eval(&Expr::Unary {
                 op: UnaryOp::Not,
                 expr: Expr::Literal(Literal::Nil).into()
             }),
-            Ok(LoxValue::Boolean(true))
+            LoxValue::Boolean(true)
         );
         assert_eq!(
             test_eval(&Expr::Unary {
@@ -341,7 +312,7 @@ mod tests {
                 }
                 .into()
             }),
-            Ok(LoxValue::Boolean(true))
+            LoxValue::Boolean(true)
         );
     }
 
@@ -357,7 +328,7 @@ mod tests {
                 op: Add,
                 right: Literal(Number(123.456)).into()
             }),
-            Ok(LoxValue::Number(246.912))
+            LoxValue::Number(246.912)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -365,7 +336,7 @@ mod tests {
                 op: Sub,
                 right: Literal(Number(3.0)).into()
             }),
-            Ok(LoxValue::Number(2.0))
+            LoxValue::Number(2.0)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -373,7 +344,7 @@ mod tests {
                 op: Mul,
                 right: Literal(Number(3.0)).into()
             }),
-            Ok(LoxValue::Number(15.0))
+            LoxValue::Number(15.0)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -381,7 +352,7 @@ mod tests {
                 op: Div,
                 right: Literal(Number(3.0)).into()
             }),
-            Ok(LoxValue::Number(2.0))
+            LoxValue::Number(2.0)
         );
 
         assert_eq!(
@@ -390,7 +361,7 @@ mod tests {
                 op: Gt,
                 right: Literal(Number(123.456)).into()
             }),
-            Ok(LoxValue::Boolean(false))
+            LoxValue::Boolean(false)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -398,7 +369,7 @@ mod tests {
                 op: Gte,
                 right: Literal(Number(3.0)).into()
             }),
-            Ok(LoxValue::Boolean(true))
+            LoxValue::Boolean(true)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -406,7 +377,7 @@ mod tests {
                 op: Lt,
                 right: Literal(Number(3.0)).into()
             }),
-            Ok(LoxValue::Boolean(false))
+            LoxValue::Boolean(false)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -414,7 +385,7 @@ mod tests {
                 op: Lte,
                 right: Literal(Number(6.0)).into()
             }),
-            Ok(LoxValue::Boolean(true))
+            LoxValue::Boolean(true)
         );
 
         assert_eq!(
@@ -423,7 +394,7 @@ mod tests {
                 op: Add,
                 right: Literal(String(" cool".to_string())).into()
             }),
-            Ok(LoxValue::LString("very cool".to_string()))
+            LoxValue::LString("very cool".to_string())
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -431,7 +402,7 @@ mod tests {
                 op: Eq,
                 right: Literal(String("cool".to_string())).into()
             }),
-            Ok(LoxValue::Boolean(false))
+            LoxValue::Boolean(false)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -439,7 +410,7 @@ mod tests {
                 op: Eq,
                 right: Literal(String("cool".to_string())).into()
             }),
-            Ok(LoxValue::Boolean(true))
+            LoxValue::Boolean(true)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -447,7 +418,7 @@ mod tests {
                 op: Eq,
                 right: Literal(Number(456.0)).into()
             }),
-            Ok(LoxValue::Boolean(false))
+            LoxValue::Boolean(false)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -455,7 +426,7 @@ mod tests {
                 op: Eq,
                 right: Literal(Number(123.0)).into()
             }),
-            Ok(LoxValue::Boolean(true))
+            LoxValue::Boolean(true)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -463,7 +434,7 @@ mod tests {
                 op: Eq,
                 right: Literal(False).into()
             }),
-            Ok(LoxValue::Boolean(false))
+            LoxValue::Boolean(false)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -471,7 +442,7 @@ mod tests {
                 op: Eq,
                 right: Literal(True).into()
             }),
-            Ok(LoxValue::Boolean(true))
+            LoxValue::Boolean(true)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -479,7 +450,7 @@ mod tests {
                 op: Eq,
                 right: Literal(False).into()
             }),
-            Ok(LoxValue::Boolean(false))
+            LoxValue::Boolean(false)
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -487,121 +458,91 @@ mod tests {
                 op: Eq,
                 right: Literal(Nil).into()
             }),
-            Ok(LoxValue::Boolean(true))
+            LoxValue::Boolean(true)
         );
     }
 
     #[test]
     fn it_evaulates_logical_or_truthy() {
-        let env = Environment::new();
-
         assert_eq!(
-            evaluate(
-                &Expr::Logical {
-                    left: Expr::Literal(Literal::Number(1.0)).into(),
-                    op: LogicalOp::Or,
-                    right: Expr::Literal(Literal::Number(2.0)).into()
-                },
-                &env
-            ),
-            Ok(LoxValue::Number(1.0))
+            test_eval(&Expr::Logical {
+                left: Expr::Literal(Literal::Number(1.0)).into(),
+                op: LogicalOp::Or,
+                right: Expr::Literal(Literal::Number(2.0)).into()
+            },),
+            LoxValue::Number(1.0)
         );
     }
 
     #[test]
     fn it_evaulates_logical_or_falsy() {
-        let env = Environment::new();
-
         assert_eq!(
-            evaluate(
-                &Expr::Logical {
-                    left: Expr::Literal(Literal::Nil).into(),
-                    op: LogicalOp::Or,
-                    right: Expr::Literal(Literal::Number(2.0)).into()
-                },
-                &env
-            ),
-            Ok(LoxValue::Number(2.0))
+            test_eval(&Expr::Logical {
+                left: Expr::Literal(Literal::Nil).into(),
+                op: LogicalOp::Or,
+                right: Expr::Literal(Literal::Number(2.0)).into()
+            },),
+            LoxValue::Number(2.0)
         );
     }
 
     #[test]
     fn it_evaulates_logical_and_truthy() {
-        let env = Environment::new();
-
         assert_eq!(
-            evaluate(
-                &Expr::Logical {
-                    left: Expr::Literal(Literal::Number(1.0)).into(),
-                    op: LogicalOp::And,
-                    right: Expr::Literal(Literal::Number(2.0)).into()
-                },
-                &env
-            ),
-            Ok(LoxValue::Number(2.0))
+            test_eval(&Expr::Logical {
+                left: Expr::Literal(Literal::Number(1.0)).into(),
+                op: LogicalOp::And,
+                right: Expr::Literal(Literal::Number(2.0)).into()
+            },),
+            LoxValue::Number(2.0)
         );
     }
 
     #[test]
     fn it_evaulates_logical_and_falsy() {
-        let env = Environment::new();
-
         assert_eq!(
-            evaluate(
-                &Expr::Logical {
-                    left: Expr::Literal(Literal::Nil).into(),
-                    op: LogicalOp::And,
-                    right: Expr::Literal(Literal::Number(2.0)).into()
-                },
-                &env
-            ),
-            Ok(LoxValue::Nil)
+            test_eval(&Expr::Logical {
+                left: Expr::Literal(Literal::Nil).into(),
+                op: LogicalOp::And,
+                right: Expr::Literal(Literal::Number(2.0)).into()
+            },),
+            LoxValue::Nil
         );
     }
 
     #[test]
     fn it_short_circuits_and() {
-        let env = Environment::new();
-
         assert_eq!(
-            evaluate(
-                &Expr::Logical {
+            test_eval(&Expr::Logical {
+                left: Expr::Literal(Literal::Nil).into(),
+                op: LogicalOp::And,
+                // this would be an error if evaluated
+                right: Expr::Binary {
                     left: Expr::Literal(Literal::Nil).into(),
-                    op: LogicalOp::And,
-                    // this would be an error if evaluated
-                    right: Expr::Binary {
-                        left: Expr::Literal(Literal::Nil).into(),
-                        op: BinaryOp::Add,
-                        right: Expr::Literal(Literal::Nil).into()
-                    }
-                    .into()
-                },
-                &env
-            ),
-            Ok(LoxValue::Nil)
+                    op: BinaryOp::Add,
+                    right: Expr::Literal(Literal::Nil).into()
+                }
+                .into()
+            },),
+            LoxValue::Nil
         );
     }
 
     #[test]
     fn it_short_circuits_or() {
-        let env = Environment::new();
-
         assert_eq!(
-            evaluate(
-                &Expr::Logical {
-                    left: Expr::Literal(Literal::True).into(),
-                    op: LogicalOp::Or,
-                    // this would be an error if evaluated
-                    right: Expr::Binary {
-                        left: Expr::Literal(Literal::Nil).into(),
-                        op: BinaryOp::Add,
-                        right: Expr::Literal(Literal::Nil).into()
-                    }
-                    .into()
-                },
-                &env
-            ),
-            Ok(LoxValue::Boolean(true))
+            test_eval(&Expr::Logical {
+                left: Expr::Literal(Literal::True).into(),
+                op: LogicalOp::Or,
+                // this would be an error if evaluated
+                right: Expr::Binary {
+                    left: Expr::Literal(Literal::Nil).into(),
+                    op: BinaryOp::Add,
+                    right: Expr::Literal(Literal::Nil).into()
+                }
+                .into()
+            },),
+            LoxValue::Boolean(true)
         );
     }
 
@@ -611,8 +552,8 @@ mod tests {
         env.define("name", LoxValue::LString("david".to_string()));
 
         assert_eq!(
-            evaluate(&Expr::Variable("name".to_string()), &env),
-            Ok(LoxValue::LString("david".to_string()))
+            evaluate(&Expr::Variable("name".to_string()), &env).unwrap(),
+            LoxValue::LString("david".to_string())
         );
     }
 
@@ -620,16 +561,14 @@ mod tests {
     fn it_declares_values() {
         let env = Environment::new();
 
-        assert_eq!(
-            execute(
-                &Stmt::Var {
-                    name: "name".to_string(),
-                    val: Expr::Literal(Literal::String("david".to_string())).into()
-                },
-                &env
-            ),
-            Ok(())
-        );
+        execute(
+            &Stmt::Var {
+                name: "name".to_string(),
+                val: Expr::Literal(Literal::String("david".to_string())).into(),
+            },
+            &env,
+        )
+        .unwrap();
 
         assert_eq!(
             env.get("name"),
@@ -641,16 +580,14 @@ mod tests {
     fn it_initializes_vars_to_nil() {
         let env = Environment::new();
 
-        assert_eq!(
-            execute(
-                &Stmt::Var {
-                    name: "name".to_string(),
-                    val: None
-                },
-                &env
-            ),
-            Ok(())
-        );
+        execute(
+            &Stmt::Var {
+                name: "name".to_string(),
+                val: None,
+            },
+            &env,
+        )
+        .unwrap();
 
         assert_eq!(env.get("name"), Some(LoxValue::Nil));
     }
@@ -659,26 +596,23 @@ mod tests {
     fn it_assigns_values() {
         let env = Environment::new();
 
-        assert_eq!(
-            execute(
-                &Stmt::Var {
-                    name: "name".to_string(),
-                    val: None
-                },
-                &env
-            ),
-            Ok(())
-        );
-        assert_eq!(
-            execute(
-                &Stmt::Expression(Expr::Assign {
-                    name: "name".to_string(),
-                    value: Expr::Literal(Literal::String("david".to_string())).into()
-                }),
-                &env
-            ),
-            Ok(())
-        );
+        execute(
+            &Stmt::Var {
+                name: "name".to_string(),
+                val: None,
+            },
+            &env,
+        )
+        .unwrap();
+
+        execute(
+            &Stmt::Expression(Expr::Assign {
+                name: "name".to_string(),
+                value: Expr::Literal(Literal::String("david".to_string())).into(),
+            }),
+            &env,
+        )
+        .unwrap();
 
         assert_eq!(
             env.get("name"),
@@ -690,35 +624,32 @@ mod tests {
     fn it_evaluates_truthy_if_blocks() {
         // this is how we'll track side effects
         let env = Environment::new();
-        assert_eq!(
-            execute(
-                &Stmt::Var {
-                    name: "name".to_string(),
-                    val: None
-                },
-                &env
-            ),
-            Ok(())
-        );
+
+        execute(
+            &Stmt::Var {
+                name: "name".to_string(),
+                val: None,
+            },
+            &env,
+        )
+        .unwrap();
         // not set yet
         assert_eq!(env.get("name"), Some(LoxValue::Nil));
 
-        assert_eq!(
-            execute(
-                // this declaration happens in a subscope...
-                &Stmt::If {
-                    condition: Expr::Literal(Literal::True),
-                    then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
-                        name: "name".to_string(),
-                        value: Expr::Literal(Literal::Number(123.0)).into()
-                    })])
-                    .into(),
-                    else_branch: None
-                },
-                &env
-            ),
-            Ok(())
-        );
+        execute(
+            // this declaration happens in a subscope...
+            &Stmt::If {
+                condition: Expr::Literal(Literal::True),
+                then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                    name: "name".to_string(),
+                    value: Expr::Literal(Literal::Number(123.0)).into(),
+                })])
+                .into(),
+                else_branch: None,
+            },
+            &env,
+        )
+        .unwrap();
 
         // now set!
         assert_eq!(env.get("name"), Some(LoxValue::Number(123.0)));
@@ -728,35 +659,32 @@ mod tests {
     fn it_doesnt_evaluate_falsy_if_blocks() {
         // this is how we'll track side effects
         let env = Environment::new();
-        assert_eq!(
-            execute(
-                &Stmt::Var {
-                    name: "name".to_string(),
-                    val: None
-                },
-                &env
-            ),
-            Ok(())
-        );
+
+        execute(
+            &Stmt::Var {
+                name: "name".to_string(),
+                val: None,
+            },
+            &env,
+        )
+        .unwrap();
         // not set yet
         assert_eq!(env.get("name"), Some(LoxValue::Nil));
 
-        assert_eq!(
-            execute(
-                // this declaration happens in a subscope...
-                &Stmt::If {
-                    condition: Expr::Literal(Literal::False),
-                    then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
-                        name: "name".to_string(),
-                        value: Expr::Literal(Literal::Number(123.0)).into()
-                    })])
-                    .into(),
-                    else_branch: None
-                },
-                &env
-            ),
-            Ok(())
-        );
+        execute(
+            // this declaration happens in a subscope...
+            &Stmt::If {
+                condition: Expr::Literal(Literal::False),
+                then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                    name: "name".to_string(),
+                    value: Expr::Literal(Literal::Number(123.0)).into(),
+                })])
+                .into(),
+                else_branch: None,
+            },
+            &env,
+        )
+        .unwrap();
 
         // still not set
         assert_eq!(env.get("name"), Some(LoxValue::Nil));
@@ -766,41 +694,39 @@ mod tests {
     fn it_ignores_else_for_truthy_if_blocks() {
         // this is how we'll track side effects
         let env = Environment::new();
-        assert_eq!(
-            execute(
-                &Stmt::Var {
-                    name: "name".to_string(),
-                    val: None
-                },
-                &env
-            ),
-            Ok(())
-        );
+
+        execute(
+            &Stmt::Var {
+                name: "name".to_string(),
+                val: None,
+            },
+            &env,
+        )
+        .unwrap();
+
         // not set yet
         assert_eq!(env.get("name"), Some(LoxValue::Nil));
 
-        assert_eq!(
-            execute(
-                // this declaration happens in a subscope...
-                &Stmt::If {
-                    condition: Expr::Literal(Literal::True),
-                    then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+        execute(
+            // this declaration happens in a subscope...
+            &Stmt::If {
+                condition: Expr::Literal(Literal::True),
+                then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                    name: "name".to_string(),
+                    value: Expr::Literal(Literal::Number(123.0)).into(),
+                })])
+                .into(),
+                else_branch: Some(
+                    Stmt::Block(vec![Stmt::Expression(Expr::Assign {
                         name: "name".to_string(),
-                        value: Expr::Literal(Literal::Number(123.0)).into()
+                        value: Expr::Literal(Literal::Number(456.0)).into(),
                     })])
                     .into(),
-                    else_branch: Some(
-                        Stmt::Block(vec![Stmt::Expression(Expr::Assign {
-                            name: "name".to_string(),
-                            value: Expr::Literal(Literal::Number(456.0)).into()
-                        })])
-                        .into()
-                    )
-                },
-                &env
-            ),
-            Ok(())
-        );
+                ),
+            },
+            &env,
+        )
+        .unwrap();
 
         // now set!
         assert_eq!(env.get("name"), Some(LoxValue::Number(123.0)));
@@ -810,41 +736,38 @@ mod tests {
     fn it_evaluates_else_for_falsy_if() {
         // this is how we'll track side effects
         let env = Environment::new();
-        assert_eq!(
-            execute(
-                &Stmt::Var {
-                    name: "name".to_string(),
-                    val: None
-                },
-                &env
-            ),
-            Ok(())
-        );
+
+        execute(
+            &Stmt::Var {
+                name: "name".to_string(),
+                val: None,
+            },
+            &env,
+        )
+        .unwrap();
         // not set yet
         assert_eq!(env.get("name"), Some(LoxValue::Nil));
 
-        assert_eq!(
-            execute(
-                // this declaration happens in a subscope...
-                &Stmt::If {
-                    condition: Expr::Literal(Literal::False),
-                    then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+        execute(
+            // this declaration happens in a subscope...
+            &Stmt::If {
+                condition: Expr::Literal(Literal::False),
+                then_branch: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                    name: "name".to_string(),
+                    value: Expr::Literal(Literal::Number(123.0)).into(),
+                })])
+                .into(),
+                else_branch: Some(
+                    Stmt::Block(vec![Stmt::Expression(Expr::Assign {
                         name: "name".to_string(),
-                        value: Expr::Literal(Literal::Number(123.0)).into()
+                        value: Expr::Literal(Literal::Number(456.0)).into(),
                     })])
                     .into(),
-                    else_branch: Some(
-                        Stmt::Block(vec![Stmt::Expression(Expr::Assign {
-                            name: "name".to_string(),
-                            value: Expr::Literal(Literal::Number(456.0)).into()
-                        })])
-                        .into()
-                    )
-                },
-                &env
-            ),
-            Ok(())
-        );
+                ),
+            },
+            &env,
+        )
+        .unwrap();
 
         // still not set
         assert_eq!(env.get("name"), Some(LoxValue::Number(456.0)));
@@ -856,30 +779,28 @@ mod tests {
         let env = Environment::new();
         env.define("num", LoxValue::Number(1.0));
 
-        assert_eq!(
-            execute(
-                // this declaration happens in a subscope...
-                &Stmt::While {
-                    condition: Expr::Binary {
-                        left: Expr::Variable("num".to_string()).into(),
-                        op: BinaryOp::Lte,
-                        right: Expr::Literal(Literal::Number(3.0)).into()
-                    },
-                    body: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
-                        name: "num".to_string(),
-                        value: Expr::Binary {
-                            left: Expr::Variable("num".to_string()).into(),
-                            op: BinaryOp::Add,
-                            right: Expr::Literal(Literal::Number(1.0)).into()
-                        }
-                        .into()
-                    })])
-                    .into(),
+        execute(
+            // this declaration happens in a subscope...
+            &Stmt::While {
+                condition: Expr::Binary {
+                    left: Expr::Variable("num".to_string()).into(),
+                    op: BinaryOp::Lte,
+                    right: Expr::Literal(Literal::Number(3.0)).into(),
                 },
-                &env
-            ),
-            Ok(())
-        );
+                body: Stmt::Block(vec![Stmt::Expression(Expr::Assign {
+                    name: "num".to_string(),
+                    value: Expr::Binary {
+                        left: Expr::Variable("num".to_string()).into(),
+                        op: BinaryOp::Add,
+                        right: Expr::Literal(Literal::Number(1.0)).into(),
+                    }
+                    .into(),
+                })])
+                .into(),
+            },
+            &env,
+        )
+        .unwrap();
 
         // still not set
         assert_eq!(env.get("num"), Some(LoxValue::Number(4.0)));
@@ -889,17 +810,15 @@ mod tests {
     fn it_creates_new_env_for_blocks() {
         let env = Environment::new();
 
-        assert_eq!(
-            execute(
-                // this declaration happens in a subscope...
-                &Stmt::Block(vec![Stmt::Var {
-                    name: "name".to_string(),
-                    val: Expr::Literal(Literal::String("david".to_string())).into(),
-                }]),
-                &env
-            ),
-            Ok(())
-        );
+        execute(
+            // this declaration happens in a subscope...
+            &Stmt::Block(vec![Stmt::Var {
+                name: "name".to_string(),
+                val: Expr::Literal(Literal::String("david".to_string())).into(),
+            }]),
+            &env,
+        )
+        .unwrap();
 
         // ... so the variable isn't present in our root scope
         assert_eq!(env.get("name"), None);
@@ -907,78 +826,55 @@ mod tests {
 
     #[test]
     fn it_fails_to_read_missing_variables() {
-        let expr = Expr::Variable("name".to_string());
-        assert_eq!(
-            test_eval(&expr),
-            Err(InterpreterError::UndefinedVariable(expr))
+        assert_contains(
+            &fail_eval(&Expr::Variable("name".to_string())),
+            "\"name\" not defined",
         );
     }
 
     #[test]
     fn it_fails_to_evaluate_invalid_unary_expressions() {
-        let expr = Expr::Unary {
+        let err = fail_eval(&Expr::Unary {
             op: UnaryOp::Neg,
             expr: Expr::Literal(Literal::String("bad".to_string())).into(),
-        };
-        let err = test_eval(&expr);
-        assert_eq!(err, Err(InterpreterError::InvalidUnaryExpr(expr)));
-        assert_eq!(
-            format!("{}", err.unwrap_err()),
-            "ERR: Invalid unary: -\"bad\"."
-        );
+        });
+        assert_contains(&err, "invalid unary");
+        assert_contains(&err, "-\"bad\"");
 
-        let expr = Expr::Unary {
+        let err = fail_eval(&Expr::Unary {
             op: UnaryOp::Neg,
             expr: Expr::Literal(Literal::False).into(),
-        };
-        let err = test_eval(&expr);
-        assert_eq!(err, Err(InterpreterError::InvalidUnaryExpr(expr)));
-        assert_eq!(
-            format!("{}", err.unwrap_err()),
-            "ERR: Invalid unary: -false."
-        );
+        });
+        assert_contains(&err, "-false");
 
-        let expr = Expr::Unary {
+        let err = fail_eval(&Expr::Unary {
             op: UnaryOp::Neg,
             expr: Expr::Literal(Literal::Nil).into(),
-        };
-        let err = test_eval(&expr);
-        assert_eq!(err, Err(InterpreterError::InvalidUnaryExpr(expr)));
-        assert_eq!(format!("{}", err.unwrap_err()), "ERR: Invalid unary: -nil.");
+        });
+        assert_contains(&err, "-nil");
     }
 
     #[test]
     fn it_fails_to_evaluate_invalid_binary_expressions() {
         // str - num
-        let expr = Expr::Binary {
+        let err = fail_eval(&Expr::Binary {
             left: Expr::Literal(Literal::String("bad".to_string())).into(),
             op: BinaryOp::Add,
             right: Expr::Literal(Literal::Number(123.0)).into(),
-        };
-        let err = test_eval(&expr);
-        assert_eq!(
-            err,
-            Err(InterpreterError::InvalidBinaryExprIncompatibleTypes(expr,))
-        );
-        assert_eq!(
-            format!("{}", err.unwrap_err()),
-            "ERR: Expected both sides of a binary expression to have the same type. Got: \"bad\" + 123."
-        );
+        });
+
+        assert_contains(&err, "same type");
+        assert_contains(&err, "123");
+        assert_contains(&err, "bad");
 
         // str - str
-        let expr = Expr::Binary {
+        let err = fail_eval(&Expr::Binary {
             left: Expr::Literal(Literal::String("bad".to_string())).into(),
             op: BinaryOp::Sub,
-            right: Expr::Literal(Literal::String("bad".to_string())).into(),
-        };
-        let err = test_eval(&expr);
-        assert_eq!(
-            err,
-            Err(InterpreterError::InvalidBinaryExprInvalidTypes(expr,))
-        );
-        assert_eq!(
-            format!("{}", err.unwrap_err()),
-            "ERR: Operation not supported for these data types. Got: \"bad\" - \"bad\"."
-        );
+            right: Expr::Literal(Literal::String("worse".to_string())).into(),
+        });
+        assert_contains(&err, "\"-\" not supported between");
+        assert_contains(&err, "\"bad\"");
+        assert_contains(&err, "\"worse\"");
     }
 }
