@@ -73,11 +73,11 @@ mod tests {
     fn it_looks_for_vars_in_parent_envs() {
         let root_env = Environment::new();
         let child_env = root_env.child_scope();
-        root_env.define("name", LoxValue::LString("david".to_string()));
+        root_env.define("name", LoxValue::String("david".to_string()));
 
         assert_eq!(
             child_env.get("name"),
-            Some(LoxValue::LString("david".to_string()))
+            Some(LoxValue::String("david".to_string()))
         );
     }
 
@@ -88,8 +88,8 @@ mod tests {
         root_env.define("name", LoxValue::Nil);
 
         assert_eq!(
-            child_env.assign("name", LoxValue::LString("david".to_string())),
-            Some(LoxValue::LString("david".to_string()))
+            child_env.assign("name", LoxValue::String("david".to_string())),
+            Some(LoxValue::String("david".to_string()))
         );
     }
 
@@ -99,7 +99,7 @@ mod tests {
         let child_env = root_env.child_scope();
 
         assert_eq!(
-            child_env.assign("name", LoxValue::LString("david".to_string())),
+            child_env.assign("name", LoxValue::String("david".to_string())),
             None
         );
     }

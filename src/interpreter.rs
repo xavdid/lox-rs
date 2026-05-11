@@ -7,7 +7,7 @@ use crate::environment::Environment;
 #[derive(PartialEq, Clone, Debug)]
 pub enum LoxValue {
     Number(f64),
-    LString(String),
+    String(String),
     Boolean(bool),
     Nil,
 }
@@ -17,7 +17,7 @@ impl Display for LoxValue {
         let res = match self {
             LoxValue::Nil => "nil",
             LoxValue::Number(v) => &v.to_string(),
-            LoxValue::LString(v) => &format!("\"{v}\""),
+            LoxValue::String(v) => &format!("\"{v}\""),
             LoxValue::Boolean(v) => &v.to_string(),
         };
         write!(f, "{res}")
@@ -85,7 +85,7 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
     Ok(match expr {
         Expr::Literal(literal) => match literal {
             Literal::Number(n) => LoxValue::Number(*n),
-            Literal::String(s) => LoxValue::LString(s.to_owned()),
+            Literal::String(s) => LoxValue::String(s.to_owned()),
             Literal::True => LoxValue::Boolean(true),
             Literal::False => LoxValue::Boolean(false),
             Literal::Nil => LoxValue::Nil,
@@ -114,7 +114,7 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
                 (Number(l), Gte, Number(r)) => Boolean(l >= r),
 
                 // string concat
-                (LString(l), Add, LString(r)) => LString(l.to_string() + r),
+                (String(l), Add, String(r)) => String(l.to_string() + r),
 
                 // equality requires same type and value
                 (l, Eq, r) => Boolean(l == r),
@@ -171,7 +171,7 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
 
 fn is_truthy(expr: &LoxValue) -> bool {
     match expr {
-        LoxValue::Number(_) | LoxValue::LString(_) => true,
+        LoxValue::Number(_) | LoxValue::String(_) => true,
         LoxValue::Boolean(b) => *b,
         LoxValue::Nil => false,
     }
@@ -201,7 +201,7 @@ mod tests {
         );
         assert_eq!(
             test_eval(&Expr::Literal(Literal::String("david!".to_string()))),
-            LoxValue::LString("david!".to_string())
+            LoxValue::String("david!".to_string())
         );
         assert_eq!(
             test_eval(&Expr::Literal(Literal::True)),
@@ -236,8 +236,8 @@ mod tests {
         assert_eq!(is_truthy(&LoxValue::Number(1.0)), true);
         assert_eq!(is_truthy(&LoxValue::Number(-1.0)), true);
 
-        assert_eq!(is_truthy(&LoxValue::LString("david".to_string())), true);
-        assert_eq!(is_truthy(&LoxValue::LString("".to_string())), true);
+        assert_eq!(is_truthy(&LoxValue::String("david".to_string())), true);
+        assert_eq!(is_truthy(&LoxValue::String("".to_string())), true);
     }
 
     #[test]
@@ -394,7 +394,7 @@ mod tests {
                 op: Add,
                 right: Literal(String(" cool".to_string())).into()
             }),
-            LoxValue::LString("very cool".to_string())
+            LoxValue::String("very cool".to_string())
         );
         assert_eq!(
             test_eval(&Expr::Binary {
@@ -549,11 +549,11 @@ mod tests {
     #[test]
     fn it_evaluates_present_variables() {
         let env = Environment::new();
-        env.define("name", LoxValue::LString("david".to_string()));
+        env.define("name", LoxValue::String("david".to_string()));
 
         assert_eq!(
             evaluate(&Expr::Variable("name".to_string()), &env).unwrap(),
-            LoxValue::LString("david".to_string())
+            LoxValue::String("david".to_string())
         );
     }
 
@@ -570,10 +570,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            env.get("name"),
-            Some(LoxValue::LString("david".to_string()))
-        );
+        assert_eq!(env.get("name"), Some(LoxValue::String("david".to_string())));
     }
 
     #[test]
@@ -614,10 +611,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            env.get("name"),
-            Some(LoxValue::LString("david".to_string()))
-        );
+        assert_eq!(env.get("name"), Some(LoxValue::String("david".to_string())));
     }
 
     #[test]

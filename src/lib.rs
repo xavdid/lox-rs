@@ -1,5 +1,4 @@
 use std::{
-    fmt::Display,
     io::{self, Write},
     process::exit,
 };
@@ -20,32 +19,6 @@ mod interpreter;
 mod parser;
 mod reader;
 mod scanner;
-
-#[derive(Debug)]
-pub enum LoxError {
-    Reader(String),
-    Scanner(String),
-    Parser(String),
-    Interpreter(String),
-}
-
-impl Display for LoxError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let message = match self {
-            LoxError::Reader(m) => m,
-            LoxError::Scanner(m) => m,
-            LoxError::Parser(m) => m,
-            LoxError::Interpreter(m) => m,
-        };
-        write!(f, "{message}")
-    }
-}
-
-impl From<LoxError> for anyhow::Error {
-    fn from(value: LoxError) -> Self {
-        anyhow!(value)
-    }
-}
 
 pub fn run_file(file_path: &str) -> Result<()> {
     let source = read_source(file_path)?;
