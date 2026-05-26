@@ -69,7 +69,7 @@ pub struct Token {
 
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} @ {}", self.value, self.line)
+        write!(f, "{:?} @ line {}", self.value, self.line)
     }
 }
 
@@ -273,6 +273,7 @@ pub fn tokenize(source: &Source) -> Result<Tokens> {
 mod tests {
     use super::*;
     use crate::test_util::assert_contains;
+    use pretty_assertions::assert_eq;
 
     fn scan(text: &str) -> Tokens {
         Scanner::new(&Source {

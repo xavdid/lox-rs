@@ -352,8 +352,42 @@ impl Parser {
             let expr = self.parse_unary()?.into();
             Ok(Expr::Unary { op, expr })
         } else {
-            self.parse_primary()
+            self.parse_call()
         }
+    }
+
+    fn parse_call(&mut self) -> ParserResult {
+        let mut expr = self.parse_primary()?;
+
+        while self.next_if(TokenType::LeftParen) {
+            // inlined `finishCall` from book
+            expr = self.finish_call(expr)?;
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, callee: Expr) -> ParserResult {
+        let mut arguments = vec![];
+
+        if !matches!(self.peek().value, TokenType::RightParen) {
+            loop {
+                arguments.push(self.parse_expression()?);
+
+                if !self.next_if(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+
+        self.next_if_or_err(TokenType::RightParen, "Expected ')' after arguments")?;
+
+        // here, the book warns for functions with more than 255 arguments. Not worth it though.
+
+        Ok(Expr::Call {
+            callee: callee.into(),
+            arguments,
+        })
     }
 
     // this is our eventual base case (with the highest precedence)- literals no longer recurse
@@ -388,7 +422,7 @@ impl Parser {
             return Ok(Expr::Grouping(expr.into()));
         }
 
-        Err(anyhow!("No expression at all?"))
+        Err(anyhow!("Expected expression, got {}", self.peek()))
     }
 
     // HELPERS
@@ -480,6 +514,7 @@ mod tests {
     use crate::ast::*;
     use crate::test_util::assert_contains;
     use anyhow::Error;
+    use pretty_assertions::assert_eq;
 
     /** helper for more legible token-heavy tests  */
     fn token(value: TokenType) -> Token {
@@ -589,6 +624,110 @@ mod tests {
                 statements: vec![Stmt::Expression(Expr::Grouping(
                     Expr::Literal(Literal::True).into()
                 ))]
+            }
+        )
+    }
+
+    #[test]
+    fn it_parses_a_function_without_args() {
+        let result = parse(vec![
+            token(TokenType::Identifier("cool".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::RightParen),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            result,
+            Ast {
+                statements: vec![Stmt::Expression(Expr::Call {
+                    callee: Expr::Variable("cool".to_string()).into(),
+                    arguments: vec![]
+                })]
+            }
+        )
+    }
+
+    #[test]
+    fn it_parses_a_function_with_2_args() {
+        let result = parse(vec![
+            token(TokenType::Identifier("add".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::Number("1".to_string())),
+            token(TokenType::Comma),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            result,
+            Ast {
+                statements: vec![Stmt::Expression(Expr::Call {
+                    callee: Expr::Variable("add".to_string()).into(),
+                    arguments: vec![
+                        Expr::Literal(Literal::Number(1.0)),
+                        Expr::Literal(Literal::Number(2.0))
+                    ]
+                })]
+            }
+        )
+    }
+
+    #[test]
+    fn it_parses_chained_functions() {
+        let result = parse(vec![
+            token(TokenType::Identifier("adder".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::Number("1".to_string())),
+            token(TokenType::Comma),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::LeftParen),
+            token(TokenType::RightParen),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            result,
+            Ast {
+                statements: vec![Stmt::Expression(Expr::Call {
+                    callee: Expr::Call {
+                        callee: Expr::Variable("adder".to_string()).into(),
+                        arguments: vec![
+                            Expr::Literal(Literal::Number(1.0)),
+                            Expr::Literal(Literal::Number(2.0))
+                        ]
+                    }
+                    .into(),
+                    arguments: vec![]
+                })]
+            }
+        )
+    }
+
+    #[test]
+    fn it_parses_nested_functions() {
+        let result = parse(vec![
+            token(TokenType::Identifier("f".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::Identifier("g".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::RightParen),
+            token(TokenType::RightParen),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            result,
+            Ast {
+                statements: vec![Stmt::Expression(Expr::Call {
+                    callee: Expr::Variable("f".to_string()).into(),
+                    arguments: vec![Expr::Call {
+                        callee: Expr::Variable("g".to_string()).into(),
+                        arguments: vec![]
+                    }]
+                })]
             }
         )
     }
@@ -1493,5 +1632,39 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_contains(&errors[0], "invalid assignment target");
+    }
+
+    #[test]
+    fn it_fails_for_invalid_function_call() {
+        let errors = fail_parse(vec![
+            token(TokenType::Identifier("add".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::Number("1".to_string())),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
+        ]);
+
+        assert_eq!(errors.len(), 1);
+        assert_contains(&errors[0], "expected ')'");
+    }
+
+    #[test]
+    fn it_handles_dangling_commas() {
+        let errors = fail_parse(vec![
+            token(TokenType::Identifier("f".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::Identifier("g".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::RightParen),
+            // TODO: it would be cool to allow trailing commas, es5 style
+            token(TokenType::Comma),
+            token(TokenType::RightParen),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(errors.len(), 1);
+        assert_contains(&errors[0], "expected expression");
     }
 }

@@ -166,6 +166,7 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
                 _ => evaluate(right, env)?,
             }
         }
+        Expr::Call { callee, arguments } => todo!(),
     })
 }
 
@@ -181,6 +182,7 @@ fn is_truthy(expr: &LoxValue) -> bool {
 mod tests {
     use super::*;
     use crate::test_util::assert_contains;
+    use pretty_assertions::assert_eq;
 
     // Helper for tests
     fn test_eval(e: &Expr) -> LoxValue {

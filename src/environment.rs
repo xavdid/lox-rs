@@ -68,6 +68,7 @@ impl Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn it_looks_for_vars_in_parent_envs() {

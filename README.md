@@ -5,7 +5,7 @@ A Rust implementation the first Lox interpreter from [Crafting Interpreters](htt
 ## Potential Improvements
 
 - [ ] repl should show expression results
-- [ ] error handling could be improved, especially inside the parser and interpreter
+- [x] error handling could be improved, especially inside the parser and interpreter
   - I don't really need all those enum types, something that wraps a string would be fine
   - Should probably try out `thiserror` for practice
 - [ ] similarly, the interpreter can't point to specific bits of code that generated errors; should store the tokens (which at least have a line number) to give some pointers

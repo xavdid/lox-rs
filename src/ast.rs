@@ -158,6 +158,11 @@ pub enum Expr {
         op: LogicalOp,
         right: Box<Expr>,
     },
+    Call {
+        callee: Box<Expr>,
+        // he stored token here for tracing errors back to a function call
+        arguments: Vec<Expr>,
+    },
 }
 
 impl Display for Expr {
@@ -170,6 +175,7 @@ impl Display for Expr {
             Expr::Variable(name) => name.to_string(),
             Expr::Assign { name, value } => format!("{name} = {value}"),
             Expr::Logical { left, op, right } => format!("{left} {op} {right}"),
+            Expr::Call { callee, arguments } => format!("{callee}({arguments:#?})"),
         };
         write!(f, "{res}")
     }
@@ -200,6 +206,7 @@ pub enum Stmt {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn pretty_printing() {

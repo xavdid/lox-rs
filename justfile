@@ -13,14 +13,14 @@ run-release:
 lint *args:
   cargo clippy --all-targets {{ args }}
 
-COURSE_DIR:= "/Users/david/projects/crusty/lox-rs"
+COURSE_DIR := "/Users/david/projects/crusty/lox-rs"
 
 sync message:
   cp -r src data cargo.toml cargo.lock {{ COURSE_DIR }}
   git -C {{ COURSE_DIR }} add .
   git -C {{ COURSE_DIR }} commit -m "{{ message }}"
-  # git -C {{ COURSE_DIR }} push
 
+# make the commit in both branches
 sync-all message: && (sync message)
   gg "{{ message }}"
 
