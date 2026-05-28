@@ -1,14 +1,30 @@
 use anyhow::{Result, anyhow};
+use std::time::{self, Instant};
 use std::{fmt::Display, mem::discriminant};
 
 use crate::ast::*;
 use crate::environment::Environment;
 
 #[derive(PartialEq, Clone, Debug)]
+pub struct Callable {
+    name: String,
+    arity: usize,
+    // TODO: global functions
+    // defn: impl Fn(&Environment, Vec<LoxValue, Global>) -> Instant, // not allowed
+}
+
+impl Callable {
+    fn call(&self) {
+        todo!("make it callable");
+    }
+}
+
+#[derive(PartialEq, Clone, Debug)]
 pub enum LoxValue {
     Number(f64),
     String(String),
     Boolean(bool),
+    Callable(Callable),
     Nil,
 }
 
@@ -19,15 +35,28 @@ impl Display for LoxValue {
             LoxValue::Number(v) => &v.to_string(),
             LoxValue::String(v) => &format!("\"{v}\""),
             LoxValue::Boolean(v) => &v.to_string(),
+            LoxValue::Callable(_) => "<native fn>",
         };
         write!(f, "{res}")
     }
 }
 
 pub fn interpret(ast: Ast) -> Result<()> {
-    let env = Environment::new();
+    let globals = Environment::new();
+
+    globals.define(
+        "clock",
+        LoxValue::Callable(Callable {
+            arity: 0,
+            name: "clock".to_string(),
+            // TODO: global functions
+            // not sure how to type this
+            // defn: |env: &Environment, args: Vec<LoxValue>| Instant::now(),
+        }),
+    );
+
     for stmt in ast.statements {
-        execute(&stmt, &env)?
+        execute(&stmt, &globals)?
     }
 
     Ok(())
@@ -166,15 +195,41 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
                 _ => evaluate(right, env)?,
             }
         }
-        Expr::Call { callee, arguments } => todo!(),
+        Expr::Call { callee, arguments } => {
+            let func = evaluate(callee, env)?;
+
+            let args = arguments
+                .iter()
+                .map(|e| evaluate(e, env))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let callable = match func {
+                LoxValue::Callable(c) => c,
+                _ => {
+                    return Err(anyhow!("Can only call functions and classes"));
+                }
+            };
+
+            if args.len() != callable.arity {
+                return Err(anyhow!(
+                    "Expected {} args but got {}",
+                    callable.arity,
+                    args.len()
+                ));
+            }
+
+            // some sort of cast? callables will probably be a nested enum of some kind?
+
+            todo!("actually call it?");
+        }
     })
 }
 
 fn is_truthy(expr: &LoxValue) -> bool {
     match expr {
-        LoxValue::Number(_) | LoxValue::String(_) => true,
         LoxValue::Boolean(b) => *b,
         LoxValue::Nil => false,
+        _ => true,
     }
 }
 

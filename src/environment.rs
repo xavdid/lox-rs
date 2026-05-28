@@ -6,9 +6,9 @@ use crate::interpreter::LoxValue;
 #[derive(Clone)]
 pub struct Environment {
     // Rc means I can have shared ownership of the object, useful when copying environments between scopes
-    // RefCell provies "interior mutability", meaning `env` doesn't have to be mutably borrowed everywhere and .
-    //   ownership checks are deferred to runtime instead of compile time
-    //   in exchange, multiple owners can all try to mutate the data (as long as they follow the normal rules; it's a panic if there are two mutable borrows at once)
+    // RefCell provies "interior mutability", meaning `env` doesn't have to be mutably borrowed everywhere and ownership checks are deferred to runtime instead of compile time.
+    // In exchange, multiple owners can all try to mutate the data
+    // (as long as they follow the normal rules; it's a panic if there are two mutable borrows at once)
     values: Rc<RefCell<HashMap<String, LoxValue>>>,
     enclosing: Option<Box<Environment>>,
 }
