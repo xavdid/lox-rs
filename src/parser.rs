@@ -2,6 +2,7 @@ use anyhow::{Result, anyhow};
 
 use crate::ast::{Ast, Expr, Literal, Stmt};
 use crate::join_errors;
+use crate::scanner::TokenType::RightParen;
 use crate::scanner::{Token, TokenType, Tokens};
 
 pub struct Parser {
@@ -55,15 +56,54 @@ impl Parser {
     // each function represents a slightly weaker operator precedence
 
     fn parse_declaration(&mut self) -> ParserResult<Stmt> {
-        if self.next_if(TokenType::Var) {
+        if self.next_if(TokenType::Fun) {
+            self.parse_function()
+        } else if self.next_if(TokenType::Var) {
             self.parse_var_declaration()
         } else {
             self.parse_statement()
         }
     }
 
+    // TODO: kind is probably an enum
+    fn parse_function(&mut self /*, kind: String */) -> ParserResult<Stmt> {
+        let kind = "function";
+        let name = self.next_if_identifier(&format!("Expected {kind} name"))?;
+
+        self.next_if_or_err(TokenType::LeftParen, "Expected '(' after {kind} name")?;
+
+        let mut parameters = vec![];
+        println!("next is {:?}", self.peek().value);
+        if !matches!(self.peek().value, TokenType::RightParen) {
+            loop {
+                if parameters.len() >= 255 {
+                    return Err(self.build_error("Can't have more than 255 parameters."));
+                }
+
+                parameters.push(self.next_if_identifier("Expected parameter name")?);
+
+                if !self.next_if(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+        self.next_if_or_err(TokenType::RightParen, "Expected ')' after parameters")?;
+
+        //
+
+        self.next_if_or_err(TokenType::LeftBrace, "Expected '{' before {kind} body")?;
+
+        let body = self.parse_block()?.into();
+
+        Ok(Stmt::Function {
+            name,
+            parameters,
+            body,
+        })
+    }
+
     fn parse_var_declaration(&mut self) -> ParserResult<Stmt> {
-        let name = self.consume_identifier()?;
+        let name = self.next_if_identifier("Missing variable name.")?;
 
         let val = if self.next_if(TokenType::Equal) {
             Some(self.parse_expression()?)
@@ -422,7 +462,10 @@ impl Parser {
             return Ok(Expr::Grouping(expr.into()));
         }
 
-        Err(anyhow!("Expected expression, got {}", self.peek()))
+        Err(anyhow!(
+            "(bottom of table) Expected expression, got {}",
+            self.peek()
+        ))
     }
 
     // HELPERS
@@ -449,8 +492,8 @@ impl Parser {
             false
         }
     }
-    /**  this like `consume_if` but hardcodes Identifier since I can't match my enums that hold values as a function arg */
-    fn consume_identifier(&mut self) -> ParserResult<String> {
+    /**  this like `next_if` but hardcodes Identifier since I can't match my enums that hold values as a function arg */
+    fn next_if_identifier(&mut self, err_msg: &str) -> ParserResult<String> {
         if matches!(self.peek().value, TokenType::Identifier(_)) {
             if let TokenType::Identifier(name) = &self.next().value {
                 Ok(name.to_string())
@@ -458,7 +501,7 @@ impl Parser {
                 panic!(".peek() said we had an idenitifier, but we didn't?")
             }
         } else {
-            Err(self.build_error("Missing variable name."))
+            Err(self.build_error(err_msg))
         }
     }
 
@@ -510,6 +553,8 @@ pub fn parse(tokens: Tokens) -> Result<Ast> {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
     use crate::ast::*;
     use crate::test_util::assert_contains;
@@ -524,7 +569,7 @@ mod tests {
     fn parse(tokens: Vec<Token>) -> Ast {
         Parser::new(tokens)
             .parse()
-            .expect("this method should return Ok()")
+            .expect("this method should return Ok(), got Err()")
     }
     fn fail_parse(tokens: Vec<Token>) -> Vec<Error> {
         Parser::new(tokens)
@@ -629,7 +674,7 @@ mod tests {
     }
 
     #[test]
-    fn it_parses_a_function_without_args() {
+    fn it_parses_a_function_call_without_args() {
         let result = parse(vec![
             token(TokenType::Identifier("cool".to_string())),
             token(TokenType::LeftParen),
@@ -649,7 +694,7 @@ mod tests {
     }
 
     #[test]
-    fn it_parses_a_function_with_2_args() {
+    fn it_parses_a_function_call_with_2_args() {
         let result = parse(vec![
             token(TokenType::Identifier("add".to_string())),
             token(TokenType::LeftParen),
@@ -675,7 +720,7 @@ mod tests {
     }
 
     #[test]
-    fn it_parses_chained_functions() {
+    fn it_parses_chained_function_calls() {
         let result = parse(vec![
             token(TokenType::Identifier("adder".to_string())),
             token(TokenType::LeftParen),
@@ -707,7 +752,7 @@ mod tests {
     }
 
     #[test]
-    fn it_parses_nested_functions() {
+    fn it_parses_nested_function_calls() {
         let result = parse(vec![
             token(TokenType::Identifier("f".to_string())),
             token(TokenType::LeftParen),
@@ -728,6 +773,65 @@ mod tests {
                         arguments: vec![]
                     }]
                 })]
+            }
+        )
+    }
+
+    #[test]
+    fn it_parses_basic_function_declarations() {
+        let result = parse(vec![
+            token(TokenType::Fun),
+            token(TokenType::Identifier("f".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::RightParen),
+            token(TokenType::LeftBrace),
+            token(TokenType::RightBrace),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            result,
+            Ast {
+                statements: vec![Stmt::Function {
+                    name: "f".into(),
+                    parameters: vec![],
+                    body: Stmt::Block(vec![]).into()
+                }]
+            }
+        )
+    }
+
+    #[test]
+    fn it_parses_function_declaration_with_args_and_body() {
+        let result = parse(vec![
+            token(TokenType::Fun),
+            token(TokenType::Identifier("sum".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::Identifier("a".to_string())),
+            token(TokenType::Comma),
+            token(TokenType::Identifier("b".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::LeftBrace),
+            token(TokenType::Print),
+            token(TokenType::Identifier("a".to_string())),
+            token(TokenType::Plus),
+            token(TokenType::Identifier("b".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::RightBrace),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            result,
+            Ast {
+                statements: vec![Stmt::Function {
+                    name: "sum".into(),
+                    parameters: vec!["a".to_string(), "b".to_string()],
+                    body: Stmt::Block(vec![Stmt::Print(Expr::Binary {
+                        left: Expr::Variable("a".to_string()).into(),
+                        op: BinaryOp::Add,
+                        right: Expr::Variable("b".to_string()).into(),
+                    },),])
+                    .into()
+                }]
             }
         )
     }
@@ -943,6 +1047,21 @@ mod tests {
                     Stmt::Print(Expr::Literal(Literal::Number(2.0))),
                     Stmt::Print(Expr::Literal(Literal::Number(3.0)))
                 ])]
+            }
+        )
+    }
+
+    #[test]
+    fn it_parses_an_empty_block() {
+        let result = parse(vec![
+            token(TokenType::LeftBrace),
+            token(TokenType::RightBrace),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            result,
+            Ast {
+                statements: vec![Stmt::Block(vec![])]
             }
         )
     }
@@ -1648,6 +1767,52 @@ mod tests {
 
         assert_eq!(errors.len(), 1);
         assert_contains(&errors[0], "expected ')'");
+    }
+
+    #[test]
+    fn it_fails_for_invalid_function_declaration_no_rparen() {
+        let errors = fail_parse(vec![
+            token(TokenType::Fun),
+            token(TokenType::Identifier("sum".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::Identifier("a".to_string())),
+            token(TokenType::Comma),
+            token(TokenType::Identifier("b".to_string())),
+            token(TokenType::LeftBrace),
+            token(TokenType::Print),
+            token(TokenType::Identifier("a".to_string())),
+            token(TokenType::Plus),
+            token(TokenType::Identifier("b".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::RightBrace),
+            token(TokenType::Eof),
+        ]);
+
+        assert_eq!(errors.len(), 2);
+        assert_contains(&errors[0], "expected ')'");
+    }
+
+    #[test]
+    fn it_fails_for_invalid_function_declaration_no_lbrace() {
+        let errors = fail_parse(vec![
+            token(TokenType::Fun),
+            token(TokenType::Identifier("sum".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::Identifier("a".to_string())),
+            token(TokenType::Comma),
+            token(TokenType::Identifier("b".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::Print),
+            token(TokenType::Identifier("a".to_string())),
+            token(TokenType::Plus),
+            token(TokenType::Identifier("b".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::RightBrace),
+            token(TokenType::Eof),
+        ]);
+
+        assert_eq!(errors.len(), 2);
+        assert_contains(&errors[0], "expected '{'");
     }
 
     #[test]

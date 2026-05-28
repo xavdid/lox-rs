@@ -201,6 +201,11 @@ pub enum Stmt {
         condition: Expr,
         body: Box<Stmt>,
     },
+    Function {
+        name: String,
+        parameters: Vec<String>,
+        body: Box<Stmt>,
+    },
 }
 
 #[cfg(test)]

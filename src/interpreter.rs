@@ -1,5 +1,4 @@
 use anyhow::{Result, anyhow};
-use std::time::{self, Instant};
 use std::{fmt::Display, mem::discriminant};
 
 use crate::ast::*;
@@ -104,6 +103,11 @@ fn execute(stmt: &Stmt, env: &Environment) -> Result<()> {
                 execute(body, env)?
             }
         }
+        Stmt::Function {
+            name,
+            parameters,
+            body,
+        } => todo!(),
     }
 
     Ok(())
