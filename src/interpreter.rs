@@ -6,15 +6,30 @@ use crate::environment::Environment;
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct Callable {
-    name: String,
+    declaration: Stmt,
     arity: usize,
     // TODO: global functions
-    // defn: impl Fn(&Environment, Vec<LoxValue, Global>) -> Instant, // not allowed
 }
 
 impl Callable {
-    fn call(&self) {
-        todo!("make it callable");
+    fn call(&self, globals: &Environment, arguments: Vec<LoxValue>) -> Result<LoxValue> {
+        let (parameters, body) = match &self.declaration {
+            Stmt::Function {
+                parameters, body, ..
+            } => (parameters, body),
+            _ => panic!(
+                "Expected declaration to be a Stmt::Function, got {:?}",
+                self.declaration
+            ),
+        };
+
+        let env = globals.child_scope();
+        for (idx, expr) in arguments.iter().enumerate() {
+            env.define(&parameters[idx], expr.clone());
+        }
+
+        execute(body, &env)?;
+        Ok(LoxValue::Nil)
     }
 }
 
@@ -43,16 +58,16 @@ impl Display for LoxValue {
 pub fn interpret(ast: Ast) -> Result<()> {
     let globals = Environment::new();
 
-    globals.define(
-        "clock",
-        LoxValue::Callable(Callable {
-            arity: 0,
-            name: "clock".to_string(),
-            // TODO: global functions
-            // not sure how to type this
-            // defn: |env: &Environment, args: Vec<LoxValue>| Instant::now(),
-        }),
-    );
+    // globals.define(
+    //     "clock",
+    //     LoxValue::Callable(Callable {
+    //         arity: 0,
+    //         name: "clock".to_string(),
+    //         // TODO: global functions
+    //         // not sure how to type this
+    //         // defn: |env: &Environment, args: Vec<LoxValue>| Instant::now(),
+    //     }),
+    // );
 
     for stmt in ast.statements {
         execute(&stmt, &globals)?
@@ -207,16 +222,20 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
                 .map(|e| evaluate(e, env))
                 .collect::<Result<Vec<_>, _>>()?;
 
+            println!("!!! {args:?}");
+
             let callable = match func {
                 LoxValue::Callable(c) => c,
                 _ => {
-                    return Err(anyhow!("Can only call functions and classes"));
+                    return Err(anyhow!(
+                        "{func:?} is not callable; Can only call functions and classes"
+                    ));
                 }
             };
 
             if args.len() != callable.arity {
                 return Err(anyhow!(
-                    "Expected {} args but got {}",
+                    "Expected {} arg(s) but got {}",
                     callable.arity,
                     args.len()
                 ));
@@ -224,7 +243,7 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
 
             // some sort of cast? callables will probably be a nested enum of some kind?
 
-            todo!("actually call it?");
+            callable.call(env, args)?
         }
     })
 }
@@ -251,7 +270,7 @@ mod tests {
 
     fn fail_eval(e: &Expr) -> anyhow::Error {
         let env = Environment::new();
-        evaluate(e, &env).expect_err("eval should return Ok(())")
+        evaluate(e, &env).expect_err("fail_eval should return Err(...)")
     }
 
     #[test]
@@ -880,6 +899,35 @@ mod tests {
     }
 
     #[test]
+    fn it_calls_functions() {
+        let env = Environment::new();
+
+        env.define(
+            "click",
+            LoxValue::Callable(Callable {
+                declaration: Stmt::Function {
+                    name: "click".to_string(),
+                    parameters: vec!["neat".to_string()],
+                    body: Stmt::Block(vec![]).into(),
+                },
+                arity: 1,
+            }),
+        );
+
+        let res = evaluate(
+            &Expr::Call {
+                callee: Expr::Variable("click".to_string()).into(),
+                arguments: vec![Expr::Literal(Literal::True)],
+            },
+            &env,
+        )
+        .expect("eval should return Ok(())");
+
+        // TODO: only returns nil by default, I think there's supposed to be somethig here
+        assert_eq!(res, LoxValue::Nil);
+    }
+
+    #[test]
     fn it_fails_to_read_missing_variables() {
         assert_contains(
             &fail_eval(&Expr::Variable("name".to_string())),
@@ -931,5 +979,41 @@ mod tests {
         assert_contains(&err, "\"-\" not supported between");
         assert_contains(&err, "\"bad\"");
         assert_contains(&err, "\"worse\"");
+    }
+
+    #[test]
+    fn it_fails_to_call_non_callables() {
+        let err = fail_eval(&Expr::Call {
+            callee: Expr::Literal(Literal::String("cool".to_string())).into(),
+            arguments: vec![],
+        });
+        assert_contains(&err, "is not callable");
+    }
+
+    #[test]
+    fn it_fails_to_call_with_wrong_arity() {
+        let env = Environment::new();
+        env.define(
+            "clock",
+            LoxValue::Callable(Callable {
+                declaration: Stmt::Function {
+                    name: "clock".to_string(),
+                    parameters: vec!["neat".to_string()],
+                    body: Stmt::Block(vec![]).into(),
+                },
+                arity: 1,
+            }),
+        );
+
+        let err = evaluate(
+            &Expr::Call {
+                callee: Expr::Variable("clock".to_string()).into(),
+                arguments: vec![],
+            },
+            &env,
+        )
+        .expect_err("eval should return Err(...)");
+
+        assert_contains(&err, "Expected 1 arg(s)");
     }
 }
