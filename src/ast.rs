@@ -205,7 +205,7 @@ pub enum Stmt {
     Function {
         name: String,
         parameters: Vec<String>,
-        body: Box<Stmt>,
+        body: Box<Stmt>, // TODO: just a vec, not an implied block quirement?
     },
 }
 

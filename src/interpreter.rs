@@ -4,14 +4,20 @@ use std::{fmt::Display, mem::discriminant};
 use crate::ast::*;
 use crate::environment::Environment;
 
+trait IsCallable {
+    // could be used for native functions?
+    fn call(&self, env: &Environment, arguments: Vec<LoxValue>) -> LoxValue;
+}
+
 #[derive(PartialEq, Clone, Debug)]
-pub struct Callable {
+pub struct InnerCallable {
     declaration: Stmt,
     arity: usize,
     // TODO: global functions
 }
 
-impl Callable {
+// impl IsCallable for Callable {
+impl InnerCallable {
     fn call(&self, globals: &Environment, arguments: Vec<LoxValue>) -> Result<LoxValue> {
         let (parameters, body) = match &self.declaration {
             Stmt::Function {
@@ -24,11 +30,12 @@ impl Callable {
         };
 
         let env = globals.child_scope();
-        for (idx, expr) in arguments.iter().enumerate() {
-            env.define(&parameters[idx], expr.clone());
+        for (idx, val) in arguments.iter().enumerate() {
+            env.define(&parameters[idx], val.clone()); // TODO: need to clone?
         }
 
         execute(body, &env)?;
+        // TODO: return a value? I guess that's later
         Ok(LoxValue::Nil)
     }
 }
@@ -38,7 +45,7 @@ pub enum LoxValue {
     Number(f64),
     String(String),
     Boolean(bool),
-    Callable(Callable),
+    Callable(InnerCallable),
     Nil,
 }
 
@@ -76,7 +83,7 @@ pub fn interpret(ast: Ast) -> Result<()> {
     Ok(())
 }
 
-/** execute a statement for its side effects */
+/// execute a statement for its side effects
 fn execute(stmt: &Stmt, env: &Environment) -> Result<()> {
     match stmt {
         Stmt::Expression(expr) => {
@@ -119,10 +126,17 @@ fn execute(stmt: &Stmt, env: &Environment) -> Result<()> {
             }
         }
         Stmt::Function {
-            name,
-            parameters,
-            body,
-        } => todo!(),
+            name, parameters, ..
+        } => {
+            env.define(
+                name,
+                LoxValue::Callable(InnerCallable {
+                    // capture the whole function, not just the block
+                    declaration: stmt.clone(), // TODO: not positive this is right
+                    arity: parameters.len(),
+                }),
+            );
+        }
     }
 
     Ok(())
@@ -217,13 +231,6 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
         Expr::Call { callee, arguments } => {
             let func = evaluate(callee, env)?;
 
-            let args = arguments
-                .iter()
-                .map(|e| evaluate(e, env))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            println!("!!! {args:?}");
-
             let callable = match func {
                 LoxValue::Callable(c) => c,
                 _ => {
@@ -233,6 +240,13 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
                 }
             };
 
+            // evaulate before checking arity, since we may need the side effects
+            // this is what python done
+            let args = arguments
+                .iter()
+                .map(|e| evaluate(e, env))
+                .collect::<Result<Vec<_>, _>>()?;
+
             if args.len() != callable.arity {
                 return Err(anyhow!(
                     "Expected {} arg(s) but got {}",
@@ -240,8 +254,6 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
                     args.len()
                 ));
             }
-
-            // some sort of cast? callables will probably be a nested enum of some kind?
 
             callable.call(env, args)?
         }
@@ -898,13 +910,51 @@ mod tests {
         assert_eq!(env.get("name"), None);
     }
 
+    /// this is an example test cases that isn't working, but feels like it should be at this point.
+    ///
+    /// I guess I don't have a testable way to execute an AST, so I'm just recrating my `interpret` function
     #[test]
-    fn it_calls_functions() {
+    fn it_calls_declared_functions() {
+        let env = Environment::new();
+
+        let ast = Ast {
+            statements: vec![
+                // declare a function
+                Stmt::Function {
+                    name: "sum".into(),
+                    parameters: vec!["a".to_string(), "b".to_string()],
+                    body: Stmt::Block(vec![Stmt::Print(Expr::Binary {
+                        left: Expr::Variable("a".to_string()).into(),
+                        op: BinaryOp::Add,
+                        right: Expr::Variable("b".to_string()).into(),
+                    })])
+                    .into(),
+                },
+                // then call it
+                Stmt::Expression(Expr::Call {
+                    callee: Expr::Variable("sum".to_string()).into(),
+                    arguments: vec![
+                        Expr::Literal(Literal::Number(1.0)),
+                        Expr::Literal(Literal::Number(2.0)),
+                    ],
+                }),
+            ],
+        };
+
+        for line in ast.statements {
+            execute(&line, &env).expect("execute() should return Ok(())");
+        }
+
+        // assert_eq!(res, LoxValue::Nil);
+    }
+
+    #[test]
+    fn it_calls_builtin_functions() {
         let env = Environment::new();
 
         env.define(
             "click",
-            LoxValue::Callable(Callable {
+            LoxValue::Callable(InnerCallable {
                 declaration: Stmt::Function {
                     name: "click".to_string(),
                     parameters: vec!["neat".to_string()],
@@ -995,7 +1045,7 @@ mod tests {
         let env = Environment::new();
         env.define(
             "clock",
-            LoxValue::Callable(Callable {
+            LoxValue::Callable(InnerCallable {
                 declaration: Stmt::Function {
                     name: "clock".to_string(),
                     parameters: vec!["neat".to_string()],

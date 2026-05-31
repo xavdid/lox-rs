@@ -2,7 +2,6 @@ use anyhow::{Result, anyhow};
 
 use crate::ast::{Ast, Expr, Literal, Stmt};
 use crate::join_errors;
-use crate::scanner::TokenType::RightParen;
 use crate::scanner::{Token, TokenType, Tokens};
 
 pub struct Parser {
@@ -57,7 +56,7 @@ impl Parser {
 
     fn parse_declaration(&mut self) -> ParserResult<Stmt> {
         if self.next_if(TokenType::Fun) {
-            self.parse_function()
+            self.parse_function_declaration()
         } else if self.next_if(TokenType::Var) {
             self.parse_var_declaration()
         } else {
@@ -66,14 +65,13 @@ impl Parser {
     }
 
     // TODO: kind is probably an enum
-    fn parse_function(&mut self /*, kind: String */) -> ParserResult<Stmt> {
+    fn parse_function_declaration(&mut self /*, kind: String */) -> ParserResult<Stmt> {
         let kind = "function";
         let name = self.next_if_identifier(&format!("Expected {kind} name"))?;
 
         self.next_if_or_err(TokenType::LeftParen, "Expected '(' after {kind} name")?;
 
         let mut parameters = vec![];
-        println!("next is {:?}", self.peek().value);
         if !matches!(self.peek().value, TokenType::RightParen) {
             loop {
                 if parameters.len() >= 255 {
@@ -396,6 +394,7 @@ impl Parser {
         }
     }
 
+    /// invoking anything that's callable
     fn parse_call(&mut self) -> ParserResult {
         let mut expr = self.parse_primary()?;
 
@@ -817,21 +816,37 @@ mod tests {
             token(TokenType::Identifier("b".to_string())),
             token(TokenType::Semicolon),
             token(TokenType::RightBrace),
+            token(TokenType::Identifier("sum".to_string())),
+            token(TokenType::LeftParen),
+            token(TokenType::Number("1".to_string())),
+            token(TokenType::Comma),
+            token(TokenType::Number("2".to_string())),
+            token(TokenType::RightParen),
+            token(TokenType::Semicolon),
             token(TokenType::Eof),
         ]);
         assert_eq!(
             result,
             Ast {
-                statements: vec![Stmt::Function {
-                    name: "sum".into(),
-                    parameters: vec!["a".to_string(), "b".to_string()],
-                    body: Stmt::Block(vec![Stmt::Print(Expr::Binary {
-                        left: Expr::Variable("a".to_string()).into(),
-                        op: BinaryOp::Add,
-                        right: Expr::Variable("b".to_string()).into(),
-                    },),])
-                    .into()
-                }]
+                statements: vec![
+                    Stmt::Function {
+                        name: "sum".into(),
+                        parameters: vec!["a".to_string(), "b".to_string()],
+                        body: Stmt::Block(vec![Stmt::Print(Expr::Binary {
+                            left: Expr::Variable("a".to_string()).into(),
+                            op: BinaryOp::Add,
+                            right: Expr::Variable("b".to_string()).into(),
+                        })])
+                        .into()
+                    },
+                    Stmt::Expression(Expr::Call {
+                        callee: Expr::Variable("sum".to_string()).into(),
+                        arguments: vec![
+                            Expr::Literal(Literal::Number(1.0)),
+                            Expr::Literal(Literal::Number(2.0))
+                        ],
+                    })
+                ]
             }
         )
     }
@@ -1816,7 +1831,7 @@ mod tests {
     }
 
     #[test]
-    fn it_handles_dangling_commas() {
+    fn it_doesnt_yet_handle_dangling_commas() {
         let errors = fail_parse(vec![
             token(TokenType::Identifier("f".to_string())),
             token(TokenType::LeftParen),
