@@ -1,5 +1,5 @@
 fun returnFunction() {
-    var outside = "outside";
+	var outside = "outside";
 	fun inner() {
 	    print outside;
 	}

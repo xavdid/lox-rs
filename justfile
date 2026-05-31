@@ -28,5 +28,5 @@ alias s := sync
 alias sa := sync-all
 
 example name:
-  cargo run --quiet data/{{ name }}.lox
+  cargo run --quiet examples/{{ name }}.lox
 alias ex := example
