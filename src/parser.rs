@@ -76,7 +76,7 @@ impl Parser {
 
         // params
         let mut parameters = vec![];
-        if !matches!(self.peek().value, TokenType::RightParen) {
+        if !self.next_is(TokenType::RightParen) {
             loop {
                 if parameters.len() >= 255 {
                     return Err(self.build_error("Can't have more than 255 parameters."));
@@ -151,7 +151,7 @@ impl Parser {
         };
 
         // we parse an expression if present
-        let condition = if matches!(self.peek().value, TokenType::Semicolon) {
+        let condition = if self.next_is(TokenType::Semicolon) {
             None
         } else {
             Some(self.parse_expression()?)
@@ -161,7 +161,7 @@ impl Parser {
         self.next_if_or_err(TokenType::Semicolon, "Expected ';' after loop condition.")?;
 
         // we parse an expression if present
-        let increment = if matches!(self.peek().value, TokenType::RightParen) {
+        let increment = if self.next_is(TokenType::RightParen) {
             None
         } else {
             Some(self.parse_expression()?)
@@ -253,7 +253,7 @@ impl Parser {
     fn parse_block(&mut self) -> ParserResult<Stmt> {
         let mut res = vec![];
 
-        while !matches!(self.peek().value, TokenType::RightBrace) && !self.is_at_end() {
+        while !self.next_is(TokenType::RightBrace) && !self.is_at_end() {
             res.push(self.parse_declaration()?);
         }
 
@@ -418,7 +418,7 @@ impl Parser {
     fn finish_call(&mut self, callee: Expr) -> ParserResult {
         let mut arguments = vec![];
 
-        if !matches!(self.peek().value, TokenType::RightParen) {
+        if !self.next_is(TokenType::RightParen) {
             loop {
                 arguments.push(self.parse_expression()?);
 
@@ -440,7 +440,7 @@ impl Parser {
 
     // this is our eventual base case (with the highest precedence)- literals no longer recurse
     fn parse_primary(&mut self) -> ParserResult {
-        if let Some(literal) = match &self.peek().value {
+        if let Some(literal) = match &self.peek() {
             TokenType::Nil => Some(Literal::Nil),
             TokenType::True => Some(Literal::True),
             TokenType::False => Some(Literal::False),
@@ -455,7 +455,7 @@ impl Parser {
             return Ok(Expr::Literal(literal));
         }
 
-        if let TokenType::Identifier(name) = &self.peek().value {
+        if let TokenType::Identifier(name) = &self.peek() {
             let name = name.clone(); // escape the borrow from self
             self.next();
             return Ok(Expr::Variable(name));
@@ -471,7 +471,7 @@ impl Parser {
         }
 
         Err(anyhow!(
-            "(bottom of table) Expected expression, got {}",
+            "(bottom of table) Expected expression, got {:?}",
             self.peek()
         ))
     }
@@ -487,13 +487,13 @@ impl Parser {
     }
 
     fn build_error(&self, msg: &str) -> anyhow::Error {
-        anyhow!("[{}] {msg}", self.peek())
+        anyhow!("[{:?}] {msg}", self.peek())
     }
 
     /// book calls this `match`, but I don't like that it doesn't communicate that it advances the pointer. Returns whether it matched and advanced
     // TODO: option? we always call .previous() right after
     fn next_if(&mut self, token_type: TokenType) -> bool {
-        if self.peek().value == token_type {
+        if self.peek() == &token_type {
             self.next();
             true
         } else {
@@ -502,7 +502,7 @@ impl Parser {
     }
     /// this like `next_if` but hardcodes Identifier since I can't match my enums that hold values as a function arg
     fn next_if_identifier(&mut self, err_msg: &str) -> ParserResult<String> {
-        if matches!(self.peek().value, TokenType::Identifier(_)) {
+        if matches!(self.peek(), TokenType::Identifier(_)) {
             if let TokenType::Identifier(name) = &self.next().value {
                 Ok(name.to_string())
             } else {
@@ -514,11 +514,11 @@ impl Parser {
     }
 
     fn is_at_end(&self) -> bool {
-        self.peek().value == TokenType::Eof
+        self.next_is(TokenType::Eof)
     }
 
-    fn peek(&self) -> &Token {
-        &self.tokens[self.current]
+    fn peek(&self) -> &TokenType {
+        &self.tokens[self.current].value
     }
 
     fn next(&mut self) -> &Token {
@@ -526,6 +526,10 @@ impl Parser {
             self.current += 1;
         }
         self.previous()
+    }
+
+    fn next_is(&self, t: TokenType) -> bool {
+        self.peek() == &t
     }
 
     fn previous(&self) -> &Token {
@@ -544,7 +548,7 @@ impl Parser {
             }
 
             if matches!(
-                self.peek().value,
+                self.peek(),
                 Class | Fun | Var | For | If | While | Print | Return
             ) {
                 return;
