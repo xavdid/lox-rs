@@ -128,7 +128,7 @@ fn execute(stmt: &Stmt, env: &Environment) -> Result<()> {
     Ok(())
 }
 
-/** evaluate the result of an exprsesion */
+/// evaluate the result of an exprsesion
 fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
     Ok(match expr {
         Expr::Literal(literal) => match literal {

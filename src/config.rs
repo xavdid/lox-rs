@@ -12,7 +12,7 @@ pub struct Config {
 }
 
 impl Config {
-    /** Takes env:args and builds a config out of them. Fails if a filepath isn't given */
+    /// Takes env:args and builds a config out of them. Fails if a filepath isn't given
     pub fn build(mut args: impl Iterator<Item = String>) -> Result<Config> {
         // get rid of program name
         args.next();

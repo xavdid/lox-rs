@@ -2,8 +2,8 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::interpreter::LoxValue;
 
-/** represents a scope */
-#[derive(Clone)]
+/// represents a scope
+#[derive(Clone, Debug)]
 pub struct Environment {
     // Rc means I can have shared ownership of the object, useful when copying environments between scopes
     // RefCell provies "interior mutability", meaning `env` doesn't have to be mutably borrowed everywhere and ownership checks are deferred to runtime instead of compile time.
@@ -49,10 +49,14 @@ impl Environment {
         self.values.borrow_mut().insert(name.into(), value);
     }
 
-    // updates an existing variable, but can't create
-    // var a; a = 3; // ok
-    // b = 3; // err, `b` is not defined
-    /** Returns `Some` if the write was successful and `None` otherwise. */
+    // TODO: make this print nicely, but not be a real doctest
+    /** updates an existing variable, but can't create.
+     * ```
+     * var a; a = 3; // ok
+     * b = 3; // err, `b` is not defined
+     * ```
+     * Returns `Some` if the write was successful and `None` otherwise.
+     */
     pub fn assign(&self, name: &str, value: LoxValue) -> Option<LoxValue> {
         if self.values.borrow().contains_key(name) {
             self.values.borrow_mut().insert(name.into(), value.clone());

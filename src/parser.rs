@@ -482,7 +482,7 @@ impl Parser {
         anyhow!("[{}] {msg}", self.peek())
     }
 
-    /** book calls this `match`, but I don't like that it doesn't communicate that it advances the pointer. Returns whether it matched and advanced */
+    /// book calls this `match`, but I don't like that it doesn't communicate that it advances the pointer. Returns whether it matched and advanced
     // TODO: option? we always call .previous() right after
     fn next_if(&mut self, token_type: TokenType) -> bool {
         if self.peek().value == token_type {
@@ -492,7 +492,7 @@ impl Parser {
             false
         }
     }
-    /**  this like `next_if` but hardcodes Identifier since I can't match my enums that hold values as a function arg */
+    /// this like `next_if` but hardcodes Identifier since I can't match my enums that hold values as a function arg
     fn next_if_identifier(&mut self, err_msg: &str) -> ParserResult<String> {
         if matches!(self.peek().value, TokenType::Identifier(_)) {
             if let TokenType::Identifier(name) = &self.next().value {
@@ -524,7 +524,7 @@ impl Parser {
         &self.tokens[self.current - 1]
     }
 
-    /** if we hit a parser error, call this to fast forward until we hit what we think is the start of a statement. This minimizes cascading errors */
+    /// if we hit a parser error, call this to fast forward until we hit what we think is the start of a statement. This minimizes cascading errors
     fn syncronize(&mut self) {
         use TokenType::*;
 
@@ -561,7 +561,7 @@ mod tests {
     use anyhow::Error;
     use pretty_assertions::assert_eq;
 
-    /** helper for more legible token-heavy tests  */
+    /// helper for more legible token-heavy tests
     fn token(value: TokenType) -> Token {
         Token { value, line: 1 }
     }

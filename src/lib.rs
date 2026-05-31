@@ -25,11 +25,9 @@ pub fn run_file(file_path: &str) -> Result<()> {
     run(&source)
 }
 
-/**
- * Given a bunch of Errors, turn them into one newline-separated list.
- *
- * Bridges the gap between things like the parser (which can return many errors) and main, which expects a single one.
- */
+/// Given a bunch of Errors, turn them into one newline-separated list.
+///
+/// Bridges the gap between things like the parser (which can return many errors) and main, which expects a single one.
 fn join_errors(errors: Vec<Error>) -> Error {
     let joined: String = errors.iter().map(|e| format!("{e}\n")).collect();
     anyhow!(joined)
@@ -78,7 +76,7 @@ pub fn run(input: &Source) -> Result<()> {
 pub mod test_util {
     use anyhow::Error;
 
-    /** test helper for making assertions about error messages. Performs a case-insensitive match on the error message  */
+    /// test helper for making assertions about error messages. Performs a case-insensitive match on the error message
     pub fn assert_contains(err: &Error, msg: &str) {
         let input = err.to_string().to_lowercase();
         let substr = &msg.to_lowercase();

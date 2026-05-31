@@ -147,7 +147,7 @@ pub enum Expr {
         expr: Box<Expr>,
     },
     Grouping(Box<Expr>),
-    /** variable read by name */
+    // variable read by name
     Variable(String),
     Assign {
         name: String,
@@ -186,7 +186,7 @@ pub enum Stmt {
     // TODO: store information about where this came from? like line? in the evaluator we just know something is wrong)
     Expression(Expr),
     Print(Expr),
-    /** variable declaration (w/ optional initialization) */
+    // variable declaration (w/ optional initialization)
     Var {
         name: String,
         val: Option<Expr>,
@@ -201,6 +201,7 @@ pub enum Stmt {
         condition: Expr,
         body: Box<Stmt>,
     },
+    // A function definition
     Function {
         name: String,
         parameters: Vec<String>,

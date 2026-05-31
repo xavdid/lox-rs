@@ -184,7 +184,7 @@ impl Scanner<'_> {
         });
     }
 
-    /** Adds one of two tokens if the next character is a specific value. Only consumes a character if there's a match */
+    /// Adds one of two tokens if the next character is a specific value. Only consumes a character if there's a match
     fn add_compound_token(&mut self, if_next_is: &char, then: TokenType, otherwise: TokenType) {
         if self.chars.peek() == Some(if_next_is) {
             self.add_token(then);
@@ -194,7 +194,7 @@ impl Scanner<'_> {
         }
     }
 
-    /** Consume `chars` until you reach a non-digit character and return the resulting String */
+    /// Consume `chars` until you reach a non-digit character and return the resulting String
     fn take_digits(&mut self, starting_with: char) -> String {
         let mut res = String::from(starting_with);
         res.extend(iter::from_fn(|| {
@@ -203,14 +203,14 @@ impl Scanner<'_> {
         res
     }
 
-    /** Consume `chars` until you reach a non-ident character and return the resulting String */
+    /// Consume `chars` until you reach a non-ident character and return the resulting String
     fn take_ident(&mut self, starting_with: char) -> String {
         let mut res = String::from(starting_with);
         res.extend(iter::from_fn(|| self.chars.next_if(|c| is_ident(*c))));
         res
     }
 
-    /** add a number token, consuming what it needs */
+    /// add a number token, consuming what it needs
     fn add_number(&mut self, c: char) {
         // this is the first or only part of the number
         // special handling for `c` because we've already consumed it to get here
@@ -235,7 +235,7 @@ impl Scanner<'_> {
         };
     }
 
-    /** add a string token, consuming what it needs. Will eat all further syntax errors, since it scans the rest of the input looking for a closing quote */
+    /// add a string token, consuming what it needs. Will eat all further syntax errors, since it scans the rest of the input looking for a closing quote
     fn add_string(&mut self) {
         // consume until we end or hit another quote
         // multi-line strings are supported
