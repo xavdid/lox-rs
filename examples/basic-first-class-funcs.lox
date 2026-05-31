@@ -1,0 +1,9 @@
+fun calls_with_three(to_call) {
+  to_call(3);
+}
+
+fun g(i) {
+  print i;
+}
+
+calls_with_three(g);

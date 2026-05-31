@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 
-use crate::ast::{Ast, Expr, Literal, Stmt};
+use crate::ast::{Ast, Expr, FnDefn, Literal, Stmt};
 use crate::join_errors;
 use crate::scanner::{Token, TokenType, Tokens};
 
@@ -69,8 +69,12 @@ impl Parser {
         let kind = "function";
         let name = self.next_if_identifier(&format!("Expected {kind} name"))?;
 
-        self.next_if_or_err(TokenType::LeftParen, "Expected '(' after {kind} name")?;
+        self.next_if_or_err(
+            TokenType::LeftParen,
+            &format!("Expected '(' after {kind} name"),
+        )?;
 
+        // params
         let mut parameters = vec![];
         if !matches!(self.peek().value, TokenType::RightParen) {
             loop {
@@ -87,17 +91,22 @@ impl Parser {
         }
         self.next_if_or_err(TokenType::RightParen, "Expected ')' after parameters")?;
 
-        //
+        // body
+        self.next_if_or_err(
+            TokenType::LeftBrace,
+            &format!("Expected '{{' before {kind} body"),
+        )?;
 
-        self.next_if_or_err(TokenType::LeftBrace, "Expected '{' before {kind} body")?;
+        let body = match self.parse_block()? {
+            Stmt::Block(stmts) => stmts,
+            r => panic!("parse_block should always return a Stmt::Block; got {r:?}"),
+        };
 
-        let body = self.parse_block()?.into();
-
-        Ok(Stmt::Function {
+        Ok(Stmt::Function(FnDefn {
             name,
             parameters,
             body,
-        })
+        }))
     }
 
     fn parse_var_declaration(&mut self) -> ParserResult<Stmt> {
@@ -790,11 +799,11 @@ mod tests {
         assert_eq!(
             result,
             Ast {
-                statements: vec![Stmt::Function {
+                statements: vec![Stmt::Function(FnDefn {
                     name: "f".into(),
                     parameters: vec![],
-                    body: Stmt::Block(vec![]).into()
-                }]
+                    body: vec![]
+                })]
             }
         )
     }
@@ -829,16 +838,15 @@ mod tests {
             result,
             Ast {
                 statements: vec![
-                    Stmt::Function {
+                    Stmt::Function(FnDefn {
                         name: "sum".into(),
                         parameters: vec!["a".to_string(), "b".to_string()],
-                        body: Stmt::Block(vec![Stmt::Print(Expr::Binary {
+                        body: vec![Stmt::Print(Expr::Binary {
                             left: Expr::Variable("a".to_string()).into(),
                             op: BinaryOp::Add,
                             right: Expr::Variable("b".to_string()).into(),
-                        })])
-                        .into()
-                    },
+                        })]
+                    }),
                     Stmt::Expression(Expr::Call {
                         callee: Expr::Variable("sum".to_string()).into(),
                         arguments: vec![

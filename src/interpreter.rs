@@ -11,30 +11,21 @@ trait IsCallable {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct InnerCallable {
-    declaration: Stmt,
+    declaration: FnDefn,
     arity: usize,
+    name: String,
     // TODO: global functions
 }
 
 // impl IsCallable for Callable {
 impl InnerCallable {
     fn call(&self, globals: &Environment, arguments: Vec<LoxValue>) -> Result<LoxValue> {
-        let (parameters, body) = match &self.declaration {
-            Stmt::Function {
-                parameters, body, ..
-            } => (parameters, body),
-            _ => panic!(
-                "Expected declaration to be a Stmt::Function, got {:?}",
-                self.declaration
-            ),
-        };
-
         let env = globals.child_scope();
         for (idx, val) in arguments.iter().enumerate() {
-            env.define(&parameters[idx], val.clone()); // TODO: need to clone?
+            env.define(&self.declaration.parameters[idx], val.clone()); // TODO: need to clone?
         }
 
-        execute(body, &env)?;
+        execute(&Stmt::Block(self.declaration.body.clone()), &env)?;
         // TODO: return a value? I guess that's later
         Ok(LoxValue::Nil)
     }
@@ -56,7 +47,7 @@ impl Display for LoxValue {
             LoxValue::Number(v) => &v.to_string(),
             LoxValue::String(v) => &format!("\"{v}\""),
             LoxValue::Boolean(v) => &v.to_string(),
-            LoxValue::Callable(_) => "<native fn>",
+            LoxValue::Callable(c) => &format!("<fn {}>", c.name),
         };
         write!(f, "{res}")
     }
@@ -65,6 +56,7 @@ impl Display for LoxValue {
 pub fn interpret(ast: Ast) -> Result<()> {
     let globals = Environment::new();
 
+    // TODO: native functions
     // globals.define(
     //     "clock",
     //     LoxValue::Callable(Callable {
@@ -125,15 +117,15 @@ fn execute(stmt: &Stmt, env: &Environment) -> Result<()> {
                 execute(body, env)?
             }
         }
-        Stmt::Function {
-            name, parameters, ..
-        } => {
+        Stmt::Function(i) => {
+            let name = &i.name;
             env.define(
                 name,
                 LoxValue::Callable(InnerCallable {
                     // capture the whole function, not just the block
-                    declaration: stmt.clone(), // TODO: not positive this is right
-                    arity: parameters.len(),
+                    name: name.to_string(),
+                    declaration: i.clone(),
+                    arity: i.parameters.len(),
                 }),
             );
         }
@@ -920,16 +912,15 @@ mod tests {
         let ast = Ast {
             statements: vec![
                 // declare a function
-                Stmt::Function {
+                Stmt::Function(FnDefn {
                     name: "sum".into(),
                     parameters: vec!["a".to_string(), "b".to_string()],
-                    body: Stmt::Block(vec![Stmt::Print(Expr::Binary {
+                    body: vec![Stmt::Print(Expr::Binary {
                         left: Expr::Variable("a".to_string()).into(),
                         op: BinaryOp::Add,
                         right: Expr::Variable("b".to_string()).into(),
-                    })])
-                    .into(),
-                },
+                    })],
+                }),
                 // then call it
                 Stmt::Expression(Expr::Call {
                     callee: Expr::Variable("sum".to_string()).into(),
@@ -955,10 +946,11 @@ mod tests {
         env.define(
             "click",
             LoxValue::Callable(InnerCallable {
-                declaration: Stmt::Function {
+                name: "click".to_string(),
+                declaration: FnDefn {
                     name: "click".to_string(),
                     parameters: vec!["neat".to_string()],
-                    body: Stmt::Block(vec![]).into(),
+                    body: vec![],
                 },
                 arity: 1,
             }),
@@ -1046,10 +1038,11 @@ mod tests {
         env.define(
             "clock",
             LoxValue::Callable(InnerCallable {
-                declaration: Stmt::Function {
+                name: "clock".to_string(),
+                declaration: FnDefn {
                     name: "clock".to_string(),
                     parameters: vec!["neat".to_string()],
-                    body: Stmt::Block(vec![]).into(),
+                    body: vec![],
                 },
                 arity: 1,
             }),

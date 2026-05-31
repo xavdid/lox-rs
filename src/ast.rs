@@ -182,6 +182,13 @@ impl Display for Expr {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct FnDefn {
+    pub name: String,
+    pub parameters: Vec<String>,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
     // TODO: store information about where this came from? like line? in the evaluator we just know something is wrong)
     Expression(Expr),
@@ -202,11 +209,7 @@ pub enum Stmt {
         body: Box<Stmt>,
     },
     // A function definition
-    Function {
-        name: String,
-        parameters: Vec<String>,
-        body: Box<Stmt>, // TODO: just a vec, not an implied block quirement?
-    },
+    Function(FnDefn),
 }
 
 #[cfg(test)]
