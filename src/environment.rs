@@ -51,10 +51,8 @@ impl Environment {
 
     // TODO: make this print nicely, but not be a real doctest
     /** updates an existing variable, but can't create.
-     * ```
      * var a; a = 3; // ok
      * b = 3; // err, `b` is not defined
-     * ```
      * Returns `Some` if the write was successful and `None` otherwise.
      */
     pub fn assign(&self, name: &str, value: LoxValue) -> Option<LoxValue> {
