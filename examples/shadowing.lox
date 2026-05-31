@@ -1,0 +1,7 @@
+var a = 3;
+
+fun inner(a) {
+  print a;
+}
+
+inner(1);

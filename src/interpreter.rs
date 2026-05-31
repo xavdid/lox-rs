@@ -6,7 +6,17 @@ use crate::environment::Environment;
 
 trait IsCallable {
     // could be used for native functions?
-    fn call(&self, env: &Environment, arguments: Vec<LoxValue>) -> LoxValue;
+    fn call(&self, env: &Environment, arguments: Vec<LoxValue>) -> Result<LoxValue>;
+}
+
+struct NativeFunc {
+    implementation: dyn Fn(&Self, &Environment, Vec<LoxValue>) -> Result<LoxValue>,
+}
+impl IsCallable for NativeFunc {
+    fn call(&self, env: &Environment, arguments: Vec<LoxValue>) -> Result<LoxValue> {
+        // Ok(LoxValue::Number(123.0))
+        (self.implementation)(self, env, arguments)
+    }
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -18,7 +28,7 @@ pub struct InnerCallable {
 }
 
 // impl IsCallable for Callable {
-impl InnerCallable {
+impl IsCallable for InnerCallable {
     fn call(&self, globals: &Environment, arguments: Vec<LoxValue>) -> Result<LoxValue> {
         let env = globals.child_scope();
         for (idx, val) in arguments.iter().enumerate() {
@@ -37,6 +47,8 @@ pub enum LoxValue {
     String(String),
     Boolean(bool),
     Callable(InnerCallable),
+    // TODO: swap to this?
+    // Callable(Box<dyn IsCallable>),
     Nil,
 }
 
@@ -57,14 +69,12 @@ pub fn interpret(ast: Ast) -> Result<()> {
     let globals = Environment::new();
 
     // TODO: native functions
+
     // globals.define(
     //     "clock",
-    //     LoxValue::Callable(Callable {
-    //         arity: 0,
-    //         name: "clock".to_string(),
-    //         // TODO: global functions
-    //         // not sure how to type this
-    //         // defn: |env: &Environment, args: Vec<LoxValue>| Instant::now(),
+    //     LoxValue::Callable(NativeFunc {
+    //         // can structs take a function pointer?
+    //         implementation: Box::new(|self, _env, _args| Ok(LoxValue(123.0))),
     //     }),
     // );
 
