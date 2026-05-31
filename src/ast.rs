@@ -191,8 +191,10 @@ pub struct FnDefn {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
     // TODO: store information about where this came from? like line? in the evaluator we just know something is wrong)
+    // most of his classes take a token though
     Expression(Expr),
     Print(Expr),
+    Return(Expr),
     // variable declaration (w/ optional initialization)
     Var {
         name: String,

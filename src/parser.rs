@@ -130,6 +130,8 @@ impl Parser {
             self.parse_if_statement()
         } else if self.next_if(TokenType::Print) {
             self.parse_print_statement()
+        } else if self.next_if(TokenType::Return) {
+            self.parse_return_statement()
         } else if self.next_if(TokenType::While) {
             self.print_while_statement()
         } else if self.next_if(TokenType::LeftBrace) {
@@ -232,6 +234,19 @@ impl Parser {
             then_branch,
             else_branch,
         })
+    }
+
+    fn parse_return_statement(&mut self) -> ParserResult<Stmt> {
+        let mut value = Expr::Literal(Literal::Nil);
+
+        if !self.next_is(TokenType::Semicolon) {
+            value = self.parse_expression()?;
+        }
+
+        // self.next_if_or_err(t, msg)
+
+        self.next_if_or_err(TokenType::Semicolon, "Expected ';' after statement.")?;
+        Ok(Stmt::Return(value))
     }
 
     fn parse_print_statement(&mut self) -> ParserResult<Stmt> {
@@ -1050,6 +1065,37 @@ mod tests {
             result,
             Ast {
                 statements: vec![Stmt::Print(Expr::Literal(Literal::Number(3.0)))]
+            }
+        )
+    }
+
+    #[test]
+    fn it_parses_return_statements() {
+        let result = parse(vec![
+            token(TokenType::Return),
+            token(TokenType::Number("3".to_string())),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            result,
+            Ast {
+                statements: vec![Stmt::Return(Expr::Literal(Literal::Number(3.0)))]
+            }
+        )
+    }
+
+    #[test]
+    fn it_parses_nil_return_statements() {
+        let result = parse(vec![
+            token(TokenType::Return),
+            token(TokenType::Semicolon),
+            token(TokenType::Eof),
+        ]);
+        assert_eq!(
+            result,
+            Ast {
+                statements: vec![Stmt::Return(Expr::Literal(Literal::Nil))]
             }
         )
     }

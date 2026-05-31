@@ -139,6 +139,7 @@ fn execute(stmt: &Stmt, env: &Environment) -> Result<()> {
                 }),
             );
         }
+        Stmt::Return(expr) => todo!(),
     }
 
     Ok(())
