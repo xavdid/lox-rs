@@ -3,6 +3,7 @@ use std::{fmt::Display, mem::discriminant};
 
 use crate::ast::*;
 use crate::environment::Environment;
+use thiserror::Error;
 
 trait IsCallable {
     // could be used for native functions?
@@ -18,6 +19,15 @@ impl IsCallable for NativeFunc {
         (self.implementation)(self, env, arguments)
     }
 }
+
+#[derive(Error, Debug)]
+enum InterpreterError {
+    #[error("used as control flow for callers")]
+    ReturnValue(LoxValue),
+    #[error("a true runtime error: {0}")]
+    RuntimeError(#[from] anyhow::Error),
+}
+type InterpreterResult<T = ()> = Result<T, InterpreterError>;
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct InnerCallable {
@@ -35,9 +45,15 @@ impl IsCallable for InnerCallable {
             env.define(&self.declaration.parameters[idx], val.clone()); // TODO: need to clone?
         }
 
-        execute(&Stmt::Block(self.declaration.body.clone()), &env)?;
-        // TODO: return a value? I guess that's later
-        Ok(LoxValue::Nil)
+        match execute(&Stmt::Block(self.declaration.body.clone()), &env) {
+            // return nil by default; statements don't produce values
+            Ok(_) => Ok(LoxValue::Nil),
+            Err(e) => match e {
+                // can return this from anywhere in the stack
+                InterpreterError::ReturnValue(val) => Ok(val),
+                InterpreterError::RuntimeError(err) => Err(err),
+            },
+        }
     }
 }
 
@@ -86,7 +102,7 @@ pub fn interpret(ast: Ast) -> Result<()> {
 }
 
 /// execute a statement for its side effects
-fn execute(stmt: &Stmt, env: &Environment) -> Result<()> {
+fn execute(stmt: &Stmt, env: &Environment) -> InterpreterResult {
     match stmt {
         Stmt::Expression(expr) => {
             evaluate(expr, env)?;
@@ -139,14 +155,16 @@ fn execute(stmt: &Stmt, env: &Environment) -> Result<()> {
                 }),
             );
         }
-        Stmt::Return(expr) => todo!(),
+        Stmt::Return(expr) => {
+            return Err(InterpreterError::ReturnValue(evaluate(expr, env)?));
+        }
     }
 
     Ok(())
 }
 
 /// evaluate the result of an exprsesion
-fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
+fn evaluate(expr: &Expr, env: &Environment) -> InterpreterResult<LoxValue> {
     Ok(match expr {
         Expr::Literal(literal) => match literal {
             Literal::Number(n) => LoxValue::Number(*n),
@@ -189,11 +207,12 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
                     return if discriminant(&left) == discriminant(&right) {
                         Err(anyhow!(
                             "Operation \"{op}\" not supported between {left:?} and {right:?}."
-                        ))
+                        )
+                        .into())
                     } else {
                         Err(anyhow!(
                             "Expected both sides of a binary expression to have the same type, got {left:?} and {right:?}."
-                        ))
+                        ).into())
                     };
                 }
             }
@@ -205,20 +224,20 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
                 (UnaryOp::Neg, LoxValue::Number(n)) => LoxValue::Number(-n),
                 (UnaryOp::Not, v) => LoxValue::Boolean(!is_truthy(&v)),
 
-                _ => return Err(anyhow!("Invalid unary: {expr}")),
+                _ => return Err(anyhow!("Invalid unary: {expr}").into()),
             }
         }
         Expr::Grouping(expr) => evaluate(expr, env)?,
         Expr::Variable(name) => match env.get(name) {
             Some(v) => v,
-            None => return Err(anyhow!("Variable \"{expr}\" not defined.")),
+            None => return Err(anyhow!("Variable \"{expr}\" not defined.").into()),
         },
         Expr::Assign { name, value } => {
             let val = evaluate(value, env)?;
 
             match env.assign(name, val) {
                 Some(val) => val,
-                None => return Err(anyhow!("Variable \"{expr}\" not defined.")),
+                None => return Err(anyhow!("Variable \"{expr}\" not defined.").into()),
             }
         }
         Expr::Logical { left, op, right } => {
@@ -239,7 +258,8 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
                 _ => {
                     return Err(anyhow!(
                         "{func:?} is not callable; Can only call functions and classes"
-                    ));
+                    )
+                    .into());
                 }
             };
 
@@ -251,11 +271,9 @@ fn evaluate(expr: &Expr, env: &Environment) -> Result<LoxValue> {
                 .collect::<Result<Vec<_>, _>>()?;
 
             if args.len() != callable.arity {
-                return Err(anyhow!(
-                    "Expected {} arg(s) but got {}",
-                    callable.arity,
-                    args.len()
-                ));
+                return Err(
+                    anyhow!("Expected {} arg(s) but got {}", callable.arity, args.len()).into(),
+                );
             }
 
             callable.call(env, args)?
@@ -283,7 +301,7 @@ mod tests {
         evaluate(e, &env).expect("eval should return Ok(())")
     }
 
-    fn fail_eval(e: &Expr) -> anyhow::Error {
+    fn fail_eval(e: &Expr) -> InterpreterError {
         let env = Environment::new();
         evaluate(e, &env).expect_err("fail_eval should return Err(...)")
     }
@@ -913,41 +931,75 @@ mod tests {
         assert_eq!(env.get("name"), None);
     }
 
-    /// this is an example test cases that isn't working, but feels like it should be at this point.
-    ///
-    /// I guess I don't have a testable way to execute an AST, so I'm just recrating my `interpret` function
     #[test]
     fn it_calls_declared_functions() {
         let env = Environment::new();
 
-        let ast = Ast {
-            statements: vec![
-                // declare a function
-                Stmt::Function(FnDefn {
-                    name: "sum".into(),
-                    parameters: vec!["a".to_string(), "b".to_string()],
-                    body: vec![Stmt::Print(Expr::Binary {
-                        left: Expr::Variable("a".to_string()).into(),
-                        op: BinaryOp::Add,
-                        right: Expr::Variable("b".to_string()).into(),
-                    })],
-                }),
-                // then call it
-                Stmt::Expression(Expr::Call {
-                    callee: Expr::Variable("sum".to_string()).into(),
-                    arguments: vec![
-                        Expr::Literal(Literal::Number(1.0)),
-                        Expr::Literal(Literal::Number(2.0)),
-                    ],
-                }),
-            ],
-        };
+        // for line in ast.statements {
+        execute(
+            // declare a function
+            &Stmt::Function(FnDefn {
+                name: "sum".into(),
+                parameters: vec!["a".to_string(), "b".to_string()],
+                body: vec![Stmt::Return(Expr::Binary {
+                    left: Expr::Variable("a".to_string()).into(),
+                    op: BinaryOp::Add,
+                    right: Expr::Variable("b".to_string()).into(),
+                })],
+            }),
+            &env,
+        )
+        .expect("execute() should return Ok(())");
 
-        for line in ast.statements {
-            execute(&line, &env).expect("execute() should return Ok(())");
-        }
+        let res = evaluate(
+            &Expr::Call {
+                callee: Expr::Variable("sum".to_string()).into(),
+                arguments: vec![
+                    Expr::Literal(Literal::Number(1.0)),
+                    Expr::Literal(Literal::Number(2.0)),
+                ],
+            },
+            &env,
+        )
+        .expect("evaluate() call should return Ok(...)");
 
-        // assert_eq!(res, LoxValue::Nil);
+        assert_eq!(res, LoxValue::Number(3.0));
+    }
+
+    #[test]
+    fn it_reraises_real_runtime_errors() {
+        let env = Environment::new();
+
+        // for line in ast.statements {
+        execute(
+            // declare a function
+            &Stmt::Function(FnDefn {
+                name: "sum".into(),
+                parameters: vec!["a".to_string(), "b".to_string()],
+                body: vec![Stmt::Return(Expr::Binary {
+                    left: Expr::Variable("a".to_string()).into(),
+                    op: BinaryOp::Add,
+                    right: Expr::Variable("b".to_string()).into(),
+                })],
+            }),
+            &env,
+        )
+        .expect("execute() should return Ok(())");
+
+        let err = evaluate(
+            &Expr::Call {
+                callee: Expr::Variable("sum".to_string()).into(),
+                arguments: vec![
+                    Expr::Literal(Literal::String("cool".to_string())),
+                    Expr::Literal(Literal::Number(2.0)),
+                ],
+            },
+            &env,
+        )
+        .expect_err("evaluate() call should return err(...)")
+        .into();
+
+        assert_contains(&err, "both sides of a binary");
     }
 
     #[test]
@@ -983,7 +1035,7 @@ mod tests {
     #[test]
     fn it_fails_to_read_missing_variables() {
         assert_contains(
-            &fail_eval(&Expr::Variable("name".to_string())),
+            &fail_eval(&Expr::Variable("name".to_string())).into(),
             "\"name\" not defined",
         );
     }
@@ -993,20 +1045,23 @@ mod tests {
         let err = fail_eval(&Expr::Unary {
             op: UnaryOp::Neg,
             expr: Expr::Literal(Literal::String("bad".to_string())).into(),
-        });
+        })
+        .into();
         assert_contains(&err, "invalid unary");
         assert_contains(&err, "-\"bad\"");
 
         let err = fail_eval(&Expr::Unary {
             op: UnaryOp::Neg,
             expr: Expr::Literal(Literal::False).into(),
-        });
+        })
+        .into();
         assert_contains(&err, "-false");
 
         let err = fail_eval(&Expr::Unary {
             op: UnaryOp::Neg,
             expr: Expr::Literal(Literal::Nil).into(),
-        });
+        })
+        .into();
         assert_contains(&err, "-nil");
     }
 
@@ -1017,7 +1072,8 @@ mod tests {
             left: Expr::Literal(Literal::String("bad".to_string())).into(),
             op: BinaryOp::Add,
             right: Expr::Literal(Literal::Number(123.0)).into(),
-        });
+        })
+        .into();
 
         assert_contains(&err, "same type");
         assert_contains(&err, "123");
@@ -1028,7 +1084,8 @@ mod tests {
             left: Expr::Literal(Literal::String("bad".to_string())).into(),
             op: BinaryOp::Sub,
             right: Expr::Literal(Literal::String("worse".to_string())).into(),
-        });
+        })
+        .into();
         assert_contains(&err, "\"-\" not supported between");
         assert_contains(&err, "\"bad\"");
         assert_contains(&err, "\"worse\"");
@@ -1039,7 +1096,8 @@ mod tests {
         let err = fail_eval(&Expr::Call {
             callee: Expr::Literal(Literal::String("cool".to_string())).into(),
             arguments: vec![],
-        });
+        })
+        .into();
         assert_contains(&err, "is not callable");
     }
 
@@ -1066,7 +1124,8 @@ mod tests {
             },
             &env,
         )
-        .expect_err("eval should return Err(...)");
+        .expect_err("eval should return Err(...)")
+        .into();
 
         assert_contains(&err, "Expected 1 arg(s)");
     }
