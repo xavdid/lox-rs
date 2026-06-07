@@ -1,4 +1,7 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use crate::interpreter::LoxValue;
 
@@ -9,21 +12,31 @@ pub struct Environment {
     // RefCell provies "interior mutability", meaning `env` doesn't have to be mutably borrowed everywhere and ownership checks are deferred to runtime instead of compile time.
     // In exchange, multiple owners can all try to mutate the data
     // (as long as they follow the normal rules; it's a panic if there are two mutable borrows at once)
-    values: Rc<RefCell<HashMap<String, LoxValue>>>,
+
+    // this used to be:
+    // values: Rc<RefCell<HashMap<String, LoxValue>>>,
+    // but anyhow requires its errors to be sendable, and one of the error tyeps is actually a return, which holds a function definition which holds a closure (an env), whose Rc isn't sendable. So we'll use the threadsafe version (`Arc<Mutex<...>>`) which is a little slower, but threadsafe.
+    values: Arc<Mutex<HashMap<String, LoxValue>>>,
     enclosing: Option<Box<Environment>>,
+}
+
+impl PartialEq for Environment {
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
 }
 
 impl Environment {
     pub fn new() -> Self {
         Environment {
-            values: Rc::new(RefCell::new(HashMap::new())),
+            values: Arc::new(Mutex::new(HashMap::new())),
             enclosing: None,
         }
     }
 
     pub fn child_scope(&self) -> Self {
         Environment {
-            values: Rc::new(RefCell::new(HashMap::new())),
+            values: Arc::new(Mutex::new(HashMap::new())),
             // because the underlying `values` is an `Rc<>`, a `.clone()` doesn't actually copy data, just increments the reference count
             enclosing: Some(self.clone().into()),
         }
@@ -31,7 +44,8 @@ impl Environment {
 
     pub fn get(&self, name: &str) -> Option<LoxValue> {
         self.values
-            .borrow()
+            .lock()
+            .unwrap()
             .get(name)
             .cloned() // TODO: this means we clone on every variable read, which isn't great!
             .or_else(|| {
@@ -46,7 +60,7 @@ impl Environment {
     // set for the first time
     // var a = 3;
     pub fn define(&self, name: &str, value: LoxValue) {
-        self.values.borrow_mut().insert(name.into(), value);
+        self.values.lock().unwrap().insert(name.into(), value);
     }
 
     // TODO: make this print nicely, but not be a real doctest
@@ -56,8 +70,11 @@ impl Environment {
      * Returns `Some` if the write was successful and `None` otherwise.
      */
     pub fn assign(&self, name: &str, value: LoxValue) -> Option<LoxValue> {
-        if self.values.borrow().contains_key(name) {
-            self.values.borrow_mut().insert(name.into(), value.clone());
+        if self.values.lock().unwrap().contains_key(name) {
+            self.values
+                .lock()
+                .unwrap()
+                .insert(name.into(), value.clone());
             Some(value)
         } else if let Some(parent) = &self.enclosing {
             parent.assign(name, value)

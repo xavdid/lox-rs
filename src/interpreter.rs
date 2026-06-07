@@ -30,7 +30,8 @@ impl NativeFunc {
                 LoxValue::Callable {
                     arity,
                     name: name.clone(),
-                    declaration: CallableThing::NativeFunction(f),
+                    body: CallableThing::NativeFunction(f),
+                    closure: env.clone(),
                 },
             );
         }
@@ -96,10 +97,8 @@ pub enum LoxValue {
     Callable {
         arity: usize,
         name: String,
-        // declaration: FnDefn,
-        declaration: CallableThing, // todo: rename body
-
-                                    // TODO: global functions
+        body: CallableThing,
+        closure: Environment,
     },
     Nil,
 }
@@ -170,15 +169,16 @@ fn execute(stmt: &Stmt, env: &Environment) -> InterpreterResult {
                 execute(body, env)?
             }
         }
-        Stmt::Function(i) => {
-            let name = &i.name;
+        Stmt::Function(f) => {
+            let name = &f.name;
             env.define(
                 name,
                 LoxValue::Callable {
                     // capture the whole function, not just the block
                     name: name.to_string(),
-                    declaration: CallableThing::DeclaredFunction(i.clone()),
-                    arity: i.parameters.len(),
+                    body: CallableThing::DeclaredFunction(f.clone()),
+                    arity: f.parameters.len(),
+                    closure: env.clone(),
                 },
             );
         }
@@ -280,10 +280,13 @@ fn evaluate(expr: &Expr, env: &Environment) -> InterpreterResult<LoxValue> {
         Expr::Call { callee, arguments } => {
             let func = evaluate(callee, env)?;
 
-            let (arity, declaration) = match func {
+            let (arity, declaration, closure) = match func {
                 LoxValue::Callable {
-                    arity, declaration, ..
-                } => (arity, declaration),
+                    arity,
+                    body: declaration,
+                    closure,
+                    ..
+                } => (arity, declaration, closure),
                 _ => {
                     return Err(anyhow!(
                         "{func:?} is not callable; Can only call functions and classes"
@@ -303,7 +306,7 @@ fn evaluate(expr: &Expr, env: &Environment) -> InterpreterResult<LoxValue> {
                 return Err(anyhow!("Expected {} arg(s) but got {}", arity, args.len()).into());
             }
 
-            declaration.call(env, args)?
+            declaration.call(&closure, args)?
         }
     })
 }
@@ -1037,12 +1040,13 @@ mod tests {
             "click",
             LoxValue::Callable {
                 name: "click".to_string(),
-                declaration: CallableThing::DeclaredFunction(FnDefn {
+                body: CallableThing::DeclaredFunction(FnDefn {
                     name: "click".to_string(),
                     parameters: vec!["neat".to_string()],
                     body: vec![],
                 }),
                 arity: 1,
+                closure: Environment::new(),
             },
         );
 
@@ -1135,12 +1139,13 @@ mod tests {
             "clock",
             LoxValue::Callable {
                 name: "clock".to_string(),
-                declaration: CallableThing::DeclaredFunction(FnDefn {
+                body: CallableThing::DeclaredFunction(FnDefn {
                     name: "clock".to_string(),
                     parameters: vec!["neat".to_string()],
                     body: vec![],
                 }),
                 arity: 1,
+                closure: Environment::new(),
             },
         );
 
