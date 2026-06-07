@@ -5,18 +5,67 @@ use crate::ast::*;
 use crate::environment::Environment;
 use thiserror::Error;
 
-trait IsCallable {
-    // could be used for native functions?
-    fn call(&self, env: &Environment, arguments: Vec<LoxValue>) -> Result<LoxValue>;
+#[derive(PartialEq, Clone, Debug)]
+pub enum NativeFunc {
+    Clock,
+    Squawk,
 }
 
-struct NativeFunc {
-    implementation: dyn Fn(&Self, &Environment, Vec<LoxValue>) -> Result<LoxValue>,
+impl NativeFunc {
+    fn properties(&self) -> (usize, String) {
+        match self {
+            NativeFunc::Clock => (0, "clock".to_string()),
+            NativeFunc::Squawk => (0, "squawk".to_string()),
+        }
+    }
+
+    fn register(env: &Environment) {
+        // important that all the native functions be here
+        for f in [NativeFunc::Clock, NativeFunc::Squawk] {
+            let (arity, name) = f.properties();
+
+            env.define(
+                &name,
+                LoxValue::Callable {
+                    arity,
+                    name: name.clone(),
+                    declaration: CallableThing::NativeFunction(f),
+                },
+            );
+        }
+    }
 }
-impl IsCallable for NativeFunc {
-    fn call(&self, env: &Environment, arguments: Vec<LoxValue>) -> Result<LoxValue> {
-        // Ok(LoxValue::Number(123.0))
-        (self.implementation)(self, env, arguments)
+
+#[derive(PartialEq, Clone, Debug)]
+pub enum CallableThing {
+    DeclaredFunction(FnDefn),
+    NativeFunction(NativeFunc),
+}
+
+impl CallableThing {
+    fn call(&self, globals: &Environment, arguments: Vec<LoxValue>) -> Result<LoxValue> {
+        match self {
+            CallableThing::DeclaredFunction(fn_defn) => {
+                let env = globals.child_scope();
+                for (idx, val) in arguments.iter().enumerate() {
+                    env.define(&fn_defn.parameters[idx], val.clone()); // TODO: need to clone?
+                }
+
+                match execute(&Stmt::Block(fn_defn.body.clone()), &env) {
+                    // return nil by default; statements don't produce values
+                    Ok(_) => Ok(LoxValue::Nil),
+                    Err(e) => match e {
+                        // can return this from anywhere in the stack
+                        InterpreterError::ReturnValue(val) => Ok(val),
+                        InterpreterError::RuntimeError(err) => Err(err),
+                    },
+                }
+            }
+            CallableThing::NativeFunction(f) => match f {
+                NativeFunc::Clock => Ok(LoxValue::Number(123.0)),
+                NativeFunc::Squawk => Ok(LoxValue::String("SQUAWK".to_string())),
+            },
+        }
     }
 }
 
@@ -30,41 +79,18 @@ enum InterpreterError {
 type InterpreterResult<T = ()> = Result<T, InterpreterError>;
 
 #[derive(PartialEq, Clone, Debug)]
-pub struct InnerCallable {
-    declaration: FnDefn,
-    arity: usize,
-    name: String,
-    // TODO: global functions
-}
-
-// impl IsCallable for Callable {
-impl IsCallable for InnerCallable {
-    fn call(&self, globals: &Environment, arguments: Vec<LoxValue>) -> Result<LoxValue> {
-        let env = globals.child_scope();
-        for (idx, val) in arguments.iter().enumerate() {
-            env.define(&self.declaration.parameters[idx], val.clone()); // TODO: need to clone?
-        }
-
-        match execute(&Stmt::Block(self.declaration.body.clone()), &env) {
-            // return nil by default; statements don't produce values
-            Ok(_) => Ok(LoxValue::Nil),
-            Err(e) => match e {
-                // can return this from anywhere in the stack
-                InterpreterError::ReturnValue(val) => Ok(val),
-                InterpreterError::RuntimeError(err) => Err(err),
-            },
-        }
-    }
-}
-
-#[derive(PartialEq, Clone, Debug)]
 pub enum LoxValue {
     Number(f64),
     String(String),
     Boolean(bool),
-    Callable(InnerCallable),
-    // TODO: swap to this?
-    // Callable(Box<dyn IsCallable>),
+    Callable {
+        arity: usize,
+        name: String,
+        // declaration: FnDefn,
+        declaration: CallableThing, // todo: rename body
+
+                                    // TODO: global functions
+    },
     Nil,
 }
 
@@ -75,7 +101,7 @@ impl Display for LoxValue {
             LoxValue::Number(v) => &v.to_string(),
             LoxValue::String(v) => &format!("\"{v}\""),
             LoxValue::Boolean(v) => &v.to_string(),
-            LoxValue::Callable(c) => &format!("<fn {}>", c.name),
+            LoxValue::Callable { name, .. } => &format!("<fn {name}>"),
         };
         write!(f, "{res}")
     }
@@ -83,16 +109,7 @@ impl Display for LoxValue {
 
 pub fn interpret(ast: Ast) -> Result<()> {
     let globals = Environment::new();
-
-    // TODO: native functions
-
-    // globals.define(
-    //     "clock",
-    //     LoxValue::Callable(NativeFunc {
-    //         // can structs take a function pointer?
-    //         implementation: Box::new(|self, _env, _args| Ok(LoxValue(123.0))),
-    //     }),
-    // );
+    NativeFunc::register(&globals);
 
     for stmt in ast.statements {
         execute(&stmt, &globals)?
@@ -147,12 +164,12 @@ fn execute(stmt: &Stmt, env: &Environment) -> InterpreterResult {
             let name = &i.name;
             env.define(
                 name,
-                LoxValue::Callable(InnerCallable {
+                LoxValue::Callable {
                     // capture the whole function, not just the block
                     name: name.to_string(),
-                    declaration: i.clone(),
+                    declaration: CallableThing::DeclaredFunction(i.clone()),
                     arity: i.parameters.len(),
-                }),
+                },
             );
         }
         Stmt::Return(expr) => {
@@ -253,8 +270,10 @@ fn evaluate(expr: &Expr, env: &Environment) -> InterpreterResult<LoxValue> {
         Expr::Call { callee, arguments } => {
             let func = evaluate(callee, env)?;
 
-            let callable = match func {
-                LoxValue::Callable(c) => c,
+            let (arity, declaration) = match func {
+                LoxValue::Callable {
+                    arity, declaration, ..
+                } => (arity, declaration),
                 _ => {
                     return Err(anyhow!(
                         "{func:?} is not callable; Can only call functions and classes"
@@ -263,20 +282,18 @@ fn evaluate(expr: &Expr, env: &Environment) -> InterpreterResult<LoxValue> {
                 }
             };
 
-            // evaulate before checking arity, since we may need the side effects
-            // this is what python done
+            // evaulate before checking arity, since we may care about the side effects
+            // this is what python does
             let args = arguments
                 .iter()
                 .map(|e| evaluate(e, env))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            if args.len() != callable.arity {
-                return Err(
-                    anyhow!("Expected {} arg(s) but got {}", callable.arity, args.len()).into(),
-                );
+            if args.len() != arity {
+                return Err(anyhow!("Expected {} arg(s) but got {}", arity, args.len()).into());
             }
 
-            callable.call(env, args)?
+            declaration.call(env, args)?
         }
     })
 }
@@ -1008,15 +1025,15 @@ mod tests {
 
         env.define(
             "click",
-            LoxValue::Callable(InnerCallable {
+            LoxValue::Callable {
                 name: "click".to_string(),
-                declaration: FnDefn {
+                declaration: CallableThing::DeclaredFunction(FnDefn {
                     name: "click".to_string(),
                     parameters: vec!["neat".to_string()],
                     body: vec![],
-                },
+                }),
                 arity: 1,
-            }),
+            },
         );
 
         let res = evaluate(
@@ -1106,15 +1123,15 @@ mod tests {
         let env = Environment::new();
         env.define(
             "clock",
-            LoxValue::Callable(InnerCallable {
+            LoxValue::Callable {
                 name: "clock".to_string(),
-                declaration: FnDefn {
+                declaration: CallableThing::DeclaredFunction(FnDefn {
                     name: "clock".to_string(),
                     parameters: vec!["neat".to_string()],
                     body: vec![],
-                },
+                }),
                 arity: 1,
-            }),
+            },
         );
 
         let err = evaluate(
