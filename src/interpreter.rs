@@ -1,4 +1,5 @@
 use anyhow::{Result, anyhow};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fmt::Display, mem::discriminant};
 
 use crate::ast::*;
@@ -8,20 +9,20 @@ use thiserror::Error;
 #[derive(PartialEq, Clone, Debug)]
 pub enum NativeFunc {
     Clock,
-    Squawk,
+    Greet,
 }
 
 impl NativeFunc {
     fn properties(&self) -> (usize, String) {
         match self {
             NativeFunc::Clock => (0, "clock".to_string()),
-            NativeFunc::Squawk => (0, "squawk".to_string()),
+            NativeFunc::Greet => (0, "greet".to_string()),
         }
     }
 
     fn register(env: &Environment) {
         // important that all the native functions be here
-        for f in [NativeFunc::Clock, NativeFunc::Squawk] {
+        for f in [NativeFunc::Clock, NativeFunc::Greet] {
             let (arity, name) = f.properties();
 
             env.define(
@@ -62,8 +63,17 @@ impl CallableThing {
                 }
             }
             CallableThing::NativeFunction(f) => match f {
-                NativeFunc::Clock => Ok(LoxValue::Number(123.0)),
-                NativeFunc::Squawk => Ok(LoxValue::String("SQUAWK".to_string())),
+                NativeFunc::Clock => {
+                    let start = SystemTime::now();
+                    let since_the_epoch = start
+                        .duration_since(UNIX_EPOCH)
+                        .expect("time should go forward");
+                    Ok(LoxValue::Number(since_the_epoch.as_secs_f64()))
+                }
+                NativeFunc::Greet => {
+                    println!("Hello, world!");
+                    Ok(LoxValue::Nil)
+                }
             },
         }
     }
