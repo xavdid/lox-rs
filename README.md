@@ -2,6 +2,12 @@
 
 A Rust implementation the first Lox interpreter from [Crafting Interpreters](https://craftinginterpreters.com/). Written as part of Dave Beazley's [Crusty Interpreters](https://www.dabeaz.com/crusty.html) course.
 
+## Current Status
+
+As of 2026-06-06, I've finished Chapter 10 of the book (through function calls). Everything seems to work, if inefficiently. I think I'm going to set this down for now in favor of other work, but it's been a fun project!
+
+I may come back to tinker eventually, but I think I've gotten what I wanted (experience with larger rust codebase, common 3rd party crates, etc) out of it.
+
 ## Potential Improvements
 
 - [ ] repl should show expression results
