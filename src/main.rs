@@ -6,8 +6,6 @@ use std::{
 
 use lox_rs::{config::Config, run_file};
 
-// use crate::{evaluate::evaluate, parser::parse, reader::read_source, tokenize::tokenize};
-
 fn main() {
     let config = Config::build(args()).unwrap_or_else(|err| {
         eprintln!("\nERR: {err:?}");

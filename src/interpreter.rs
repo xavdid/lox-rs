@@ -116,12 +116,20 @@ impl Display for LoxValue {
     }
 }
 
-pub fn interpret(ast: Ast) -> Result<()> {
+pub fn env_with_globals() -> Environment {
     let globals = Environment::new();
     NativeFunc::register(&globals);
+    globals
+}
+
+pub fn interpret(ast: Ast, env: Option<&Environment>) -> Result<()> {
+    let env = match env {
+        Some(e) => e,
+        None => &env_with_globals(),
+    };
 
     for stmt in ast.statements {
-        execute(&stmt, &globals)?
+        execute(&stmt, env)?
     }
 
     Ok(())
@@ -1033,7 +1041,7 @@ mod tests {
     }
 
     #[test]
-    fn it_calls_builtin_functions() {
+    fn it_calls_inlined_functions() {
         let env = Environment::new();
 
         env.define(
@@ -1043,7 +1051,7 @@ mod tests {
                 body: CallableThing::DeclaredFunction(FnDefn {
                     name: "click".to_string(),
                     parameters: vec!["neat".to_string()],
-                    body: vec![],
+                    body: vec![Stmt::Return(Expr::Literal(Literal::Number(123.0)))],
                 }),
                 arity: 1,
                 closure: Environment::new(),
@@ -1059,8 +1067,7 @@ mod tests {
         )
         .expect("eval should return Ok(())");
 
-        // TODO: only returns nil by default, I think there's supposed to be somethig here
-        assert_eq!(res, LoxValue::Nil);
+        assert_eq!(res, LoxValue::Number(123.0));
     }
 
     #[test]

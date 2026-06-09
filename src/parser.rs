@@ -506,7 +506,6 @@ impl Parser {
     }
 
     /// book calls this `match`, but I don't like that it doesn't communicate that it advances the pointer. Returns whether it matched and advanced
-    // TODO: option? we always call .previous() right after
     fn next_if(&mut self, token_type: TokenType) -> bool {
         if self.peek() == &token_type {
             self.next();

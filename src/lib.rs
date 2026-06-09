@@ -6,7 +6,8 @@ use std::{
 use anyhow::{Error, Result, anyhow};
 
 use crate::{
-    interpreter::interpret,
+    environment::Environment,
+    interpreter::{env_with_globals, interpret},
     parser::parse,
     reader::{Source, read_source},
     scanner::tokenize,
@@ -22,7 +23,8 @@ mod scanner;
 
 pub fn run_file(file_path: &str) -> Result<()> {
     let source = read_source(file_path)?;
-    run(&source)
+    run(&source, None)?;
+    Ok(())
 }
 
 /// Given a bunch of Errors, turn them into one newline-separated list.
@@ -35,10 +37,10 @@ fn join_errors(errors: Vec<Error>) -> Error {
 
 // never returns; run until quit
 pub fn run_repl() -> ! {
-    // TODO: add environment
     // TODO: print expressions, e.g.
     // >>> 1 + 1;
     // > 2
+    let env = env_with_globals();
     loop {
         print!("lox.rs >>> ");
         io::stdout().flush().expect("flush to work");
@@ -55,19 +57,22 @@ pub fn run_repl() -> ! {
             exit(0);
         }
 
-        if let Err(e) = run(&Source {
-            text: input.to_string(),
-        }) {
+        if let Err(e) = run(
+            &Source {
+                text: input.to_string(),
+            },
+            Some(&env),
+        ) {
             eprintln!("{e}")
         }
     }
 }
 
-pub fn run(input: &Source) -> Result<()> {
+fn run(input: &Source, env: Option<&Environment>) -> Result<()> {
     // this is the core of the interpreter
     let tokens = tokenize(input)?;
     let ast = parse(tokens)?;
-    interpret(ast)?;
+    interpret(ast, env)?;
 
     Ok(())
 }
