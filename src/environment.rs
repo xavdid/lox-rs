@@ -64,12 +64,7 @@ impl Environment {
     }
 
     /// updates an existing variable, but can't create.
-    /// ```ignore
-    /// var a; a = 3; // ok
-    /// b = 3; // err, `b` is not defined
-    /// ```
-    ///Returns `Some` if the write was successful and `None` otherwise.
-    ///
+    /// Returns `Some` if the write was successful and `None` otherwise.
     pub fn assign(&self, name: &str, value: LoxValue) -> Option<LoxValue> {
         if self.values.lock().unwrap().contains_key(name) {
             self.values

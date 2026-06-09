@@ -122,24 +122,29 @@ pub fn env_with_globals() -> Environment {
     globals
 }
 
-pub fn interpret(ast: Ast, env: Option<&Environment>) -> Result<()> {
+pub fn interpret(ast: Ast, env: Option<&Environment>, print_values: bool) -> Result<()> {
     let env = match env {
         Some(e) => e,
         None => &env_with_globals(),
     };
 
     for stmt in ast.statements {
-        execute(&stmt, env)?
+        if let Some(v) = execute(&stmt, env)?
+            && print_values
+        {
+            println!("{v}")
+        }
     }
 
     Ok(())
 }
 
 /// execute a statement for its side effects
-fn execute(stmt: &Stmt, env: &Environment) -> InterpreterResult {
+fn execute(stmt: &Stmt, env: &Environment) -> InterpreterResult<Option<LoxValue>> {
     match stmt {
         Stmt::Expression(expr) => {
-            evaluate(expr, env)?;
+            let v = evaluate(expr, env)?;
+            return Ok(Some(v));
         }
         Stmt::Print(expr) => {
             let val = evaluate(expr, env)?;
@@ -174,7 +179,7 @@ fn execute(stmt: &Stmt, env: &Environment) -> InterpreterResult {
         }
         Stmt::While { condition, body } => {
             while is_truthy(&evaluate(condition, env)?) {
-                execute(body, env)?
+                execute(body, env)?;
             }
         }
         Stmt::Function(f) => {
@@ -195,7 +200,7 @@ fn execute(stmt: &Stmt, env: &Environment) -> InterpreterResult {
         }
     }
 
-    Ok(())
+    Ok(None)
 }
 
 /// evaluate the result of an exprsesion

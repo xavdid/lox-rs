@@ -23,7 +23,7 @@ mod scanner;
 
 pub fn run_file(file_path: &str) -> Result<()> {
     let source = read_source(file_path)?;
-    run(&source, None)?;
+    run(&source, None, false)?;
     Ok(())
 }
 
@@ -62,17 +62,18 @@ pub fn run_repl() -> ! {
                 text: input.to_string(),
             },
             Some(&env),
+            true,
         ) {
             eprintln!("{e}")
         }
     }
 }
 
-fn run(input: &Source, env: Option<&Environment>) -> Result<()> {
+fn run(input: &Source, env: Option<&Environment>, print_values: bool) -> Result<()> {
     // this is the core of the interpreter
     let tokens = tokenize(input)?;
     let ast = parse(tokens)?;
-    interpret(ast, env)?;
+    interpret(ast, env, print_values)?;
 
     Ok(())
 }
